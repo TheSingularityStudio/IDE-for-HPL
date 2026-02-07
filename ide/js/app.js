@@ -248,7 +248,77 @@ function hideSaveDialog() {
     document.getElementById('save-dialog').classList.add('hidden');
 }
 
+// 配置对话框
+function showConfigDialog() {
+    const config = HPLConfig.getConfig();
+    document.getElementById('config-api-url').value = config.apiBaseUrl;
+    document.getElementById('config-timeout').value = config.requestTimeout;
+    document.getElementById('config-font-size').value = config.fontSize;
+    document.getElementById('config-theme').value = config.editorTheme;
+    document.getElementById('config-dialog').classList.remove('hidden');
+}
+
+function hideConfigDialog() {
+    document.getElementById('config-dialog').classList.add('hidden');
+}
+
+async function testServerConnection() {
+    const btn = document.getElementById('btn-test-connection');
+    const originalText = btn.textContent;
+    btn.textContent = '⏳ 测试中...';
+    btn.disabled = true;
+    
+    const result = await HPLConfig.testConnection();
+    
+    btn.textContent = originalText;
+    btn.disabled = false;
+    
+    if (result.success) {
+        showOutput('✅ 连接成功！服务器运行正常', 'success');
+    } else {
+        showOutput('❌ 连接失败: ' + result.error, 'error');
+    }
+}
+
+function saveConfig() {
+    const apiUrl = document.getElementById('config-api-url').value.trim();
+    const timeout = parseInt(document.getElementById('config-timeout').value) || 30000;
+    const fontSize = parseInt(document.getElementById('config-font-size').value) || 14;
+    const theme = document.getElementById('config-theme').value;
+    
+    if (!apiUrl) {
+        showOutput('错误: API 地址不能为空', 'error');
+        return;
+    }
+    
+    HPLConfig.saveConfig({
+        apiBaseUrl: apiUrl,
+        requestTimeout: timeout,
+        fontSize: fontSize,
+        editorTheme: theme
+    });
+    
+    // 应用字体大小
+    if (editor) {
+        editor.updateOptions({ fontSize: fontSize });
+    }
+    
+    hideConfigDialog();
+    showOutput('配置已保存', 'success');
+}
+
+function resetConfig() {
+    HPLConfig.resetConfig();
+    const config = HPLConfig.getConfig();
+    document.getElementById('config-api-url').value = config.apiBaseUrl;
+    document.getElementById('config-timeout').value = config.requestTimeout;
+    document.getElementById('config-font-size').value = config.fontSize;
+    document.getElementById('config-theme').value = config.editorTheme;
+    showOutput('配置已重置为默认值', 'info');
+}
+
 function confirmSave() {
+
     const filename = document.getElementById('save-filename').value;
     if (!filename) return;
     
@@ -410,10 +480,13 @@ async function runCode() {
         formData.append('code', code);
         
         // 发送到后端执行
-        const response = await fetch('http://localhost:5000/run', {
+        const apiUrl = HPLConfig.buildApiUrl('/run');
+        const response = await fetch(apiUrl, {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: AbortSignal.timeout(HPLConfig.getConfig().requestTimeout)
         });
+
         
         const result = await response.json();
         
@@ -454,7 +527,9 @@ function refreshFileTree() {
 
 function loadExample(filename) {
     // 从后端 API 加载示例文件
-    fetch(`http://localhost:5000/examples/${filename}`)
+    const apiUrl = HPLConfig.buildApiUrl(`/examples/${filename}`);
+    fetch(apiUrl)
+
         .then(response => response.json())
         .then(result => {
             if (result.success) {
@@ -498,6 +573,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 保存对话框
     document.getElementById('btn-save-confirm').addEventListener('click', confirmSave);
     document.getElementById('btn-save-cancel').addEventListener('click', hideSaveDialog);
+    
+    // 配置对话框
+    document.getElementById('btn-config').addEventListener('click', showConfigDialog);
+    document.getElementById('btn-config-cancel').addEventListener('click', hideConfigDialog);
+    document.getElementById('btn-config-save').addEventListener('click', saveConfig);
+    document.getElementById('btn-config-reset').addEventListener('click', resetConfig);
+    document.getElementById('btn-test-connection').addEventListener('click', testServerConnection);
+
     
     // 面板切换
     document.querySelectorAll('.panel-tab').forEach(tab => {

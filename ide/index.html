@@ -27,10 +27,15 @@
                 <button id="btn-run" class="toolbar-btn run-btn" title="运行 (F5)">
                     <span class="icon">▶️</span> 运行
                 </button>
+                <div class="toolbar-separator"></div>
+                <button id="btn-config" class="toolbar-btn" title="设置">
+                    <span class="icon">⚙️</span> 设置
+                </button>
             </div>
             <div class="toolbar-right">
                 <span id="status-indicator" class="status-ready">就绪</span>
             </div>
+
         </div>
 
         <!-- 主内容区 -->
@@ -170,6 +175,43 @@
         </div>
     </div>
 
+    <!-- 配置对话框 -->
+    <div id="config-dialog" class="dialog hidden">
+        <div class="dialog-content">
+            <h3>IDE 设置</h3>
+            <div class="config-form">
+                <div class="config-item">
+                    <label>后端服务器地址:</label>
+                    <input type="text" id="config-api-url" placeholder="http://localhost:5000">
+                </div>
+                <div class="config-item">
+                    <label>请求超时 (毫秒):</label>
+                    <input type="number" id="config-timeout" placeholder="30000" min="5000" max="120000">
+                </div>
+                <div class="config-item">
+                    <label>编辑器字体大小:</label>
+                    <input type="number" id="config-font-size" placeholder="14" min="8" max="32">
+                </div>
+                <div class="config-item">
+                    <label>编辑器主题:</label>
+                    <select id="config-theme">
+                        <option value="vs-dark">深色 (vs-dark)</option>
+                        <option value="vs">浅色 (vs)</option>
+                        <option value="hc-black">高对比度 (hc-black)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="dialog-buttons">
+                <button id="btn-test-connection" class="btn-secondary">测试连接</button>
+                <button id="btn-config-reset" class="btn-secondary">重置</button>
+                <button id="btn-config-save" class="btn-primary">保存</button>
+                <button id="btn-config-cancel">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
     <script src="js/app.js"></script>
+
 </body>
 </html>
