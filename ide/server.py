@@ -13,8 +13,23 @@ from flask_cors import CORS
 # 添加 hpl_runtime 到路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='.', static_url_path='')
 CORS(app)  # 启用跨域支持
+
+
+
+def clean_code(code):
+    """
+    清理代码中的转义字符
+    处理 PowerShell 等发送的转义换行符
+    """
+    # 处理 PowerShell 风格的换行符转义
+    code = code.replace('`n', '\n')
+    # 处理其他可能的转义
+    code = code.replace('\\n', '\n')
+    code = code.replace('\\t', '\t')
+    code = code.replace('\\"', '"')
+    return code
 
 
 @app.route('/run', methods=['POST'])
@@ -31,6 +46,9 @@ def run_code():
             'error': '代码为空'
         })
     
+    # 清理代码中的转义字符
+    code = clean_code(code)
+    
     # 创建临时文件
     temp_file = None
     try:
@@ -42,6 +60,7 @@ def run_code():
         # 执行 HPL 代码
         result = execute_hpl(temp_file)
         return jsonify(result)
+
         
     except Exception as e:
         return jsonify({
@@ -184,6 +203,31 @@ def health_check():
         'status': 'ok',
         'message': 'HPL IDE Server is running'
     })
+
+
+@app.route('/', methods=['GET'])
+def serve_index():
+    """
+    提供 IDE 主页面
+    """
+    return app.send_static_file('index.html')
+
+
+@app.route('/js/<path:filename>', methods=['GET'])
+def serve_js(filename):
+    """
+    提供 JavaScript 文件
+    """
+    return app.send_static_file(f'js/{filename}')
+
+
+@app.route('/css/<path:filename>', methods=['GET'])
+def serve_css(filename):
+    """
+    提供 CSS 文件
+    """
+    return app.send_static_file(f'css/{filename}')
+
 
 
 def main():

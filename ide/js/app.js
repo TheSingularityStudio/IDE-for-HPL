@@ -453,16 +453,21 @@ function refreshFileTree() {
 }
 
 function loadExample(filename) {
-    // 从 examples 目录加载示例文件
-    fetch(`../examples/${filename}`)
-        .then(response => response.text())
-        .then(content => {
-            openFileInEditor(filename, content, false);
+    // 从后端 API 加载示例文件
+    fetch(`http://localhost:5000/examples/${filename}`)
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                openFileInEditor(filename, result.content, false);
+            } else {
+                showOutput('无法加载示例文件: ' + (result.error || '未知错误'), 'error');
+            }
         })
         .catch(error => {
             showOutput('无法加载示例文件: ' + error.message, 'error');
         });
 }
+
 
 // 面板切换
 function switchPanel(panelName) {
