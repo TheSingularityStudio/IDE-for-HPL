@@ -118,6 +118,73 @@ def clean_code(code):
     return code
 
 
+def extract_includes(code):
+    """
+    从 HPL 代码中提取 includes 列表
+    使用正则表达式解析，避免 YAML 解析错误（HPL 代码包含 => 箭头函数）
+    """
+    includes = []
+    try:
+        # 使用正则表达式匹配 includes 部分
+        # 匹配 includes: 后面跟着的列表项
+        import re
+        
+        # 查找 includes: 部分
+        includes_pattern = r'^includes:\s*(?:\r?\n)((?:\s*-\s*.+\s*(?:\r?\n)?)*)'
+        match = re.search(includes_pattern, code, re.MULTILINE)
+        
+        if match:
+            # 提取列表项
+            list_content = match.group(1)
+            # 匹配每个 - 开头的项
+            item_pattern = r'^\s*-\s*(.+?)\s*$'
+            for line in list_content.split('\n'):
+                item_match = re.match(item_pattern, line)
+                if item_match:
+                    include_file = item_match.group(1).strip()
+                    # 去除可能的引号
+                    include_file = include_file.strip('"\'')
+                    includes.append(include_file)
+    except Exception:
+        # 如果解析失败，返回空列表
+        pass
+    return includes
+
+
+
+def copy_include_files(code, temp_dir):
+    """
+    复制 include 文件到临时目录
+    从 examples 目录查找并复制 include 文件
+    返回: (copied_files列表, 更新后的代码)
+    """
+    includes = extract_includes(code)
+    if not includes:
+        return [], code
+    
+    copied_files = []
+    examples_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), '..', 'examples')
+    )
+    
+    for include_file in includes:
+        # 在 examples 目录中查找 include 文件
+        source_path = os.path.join(examples_dir, include_file)
+        if os.path.exists(source_path):
+            # 复制到临时目录
+            dest_path = os.path.join(temp_dir, include_file)
+            try:
+                import shutil
+                shutil.copy2(source_path, dest_path)
+                copied_files.append(dest_path)
+                logger.info(f"复制 include 文件: {source_path} -> {dest_path}")
+            except Exception as e:
+                logger.error(f"复制 include 文件失败: {source_path}, 错误: {e}")
+    
+    return copied_files, code
+
+
+
 def validate_path(file_path, allowed_dir):
     """
     验证文件路径是否在允许的目录内
@@ -148,6 +215,7 @@ def run_code():
     执行 HPL 代码
     接收代码字符串，保存到临时文件并执行
     添加超时限制防止无限循环
+    自动处理 include 文件复制
     """
     code = request.form.get('code', '')
     
@@ -162,17 +230,19 @@ def run_code():
     
     # 创建临时文件
     temp_file = None
+    temp_include_files = []
+    temp_dir = None
     try:
-        # 创建临时 HPL 文件
-        with tempfile.NamedTemporaryFile(
-            mode='w', 
-            suffix='.hpl', 
-            delete=False, 
-            encoding='utf-8',
-            prefix='hpl_'
-        ) as f:
+        # 创建临时目录（用于存放 include 文件）
+        temp_dir = tempfile.mkdtemp(prefix='hpl_')
+        
+        # 复制 include 文件到临时目录
+        temp_include_files, code = copy_include_files(code, temp_dir)
+        
+        # 创建临时 HPL 文件（在临时目录中，以便正确解析 includes）
+        temp_file = os.path.join(temp_dir, 'main.hpl')
+        with open(temp_file, 'w', encoding='utf-8') as f:
             f.write(code)
-            temp_file = f.name
         
         logger.info(f"执行临时文件: {temp_file}")
         
@@ -193,13 +263,15 @@ def run_code():
             'error': f'服务器错误: {str(e)}'
         })
     finally:
-        # 清理临时文件
-        if temp_file and os.path.exists(temp_file):
+        # 清理临时目录及所有文件
+        if temp_dir and os.path.exists(temp_dir):
             try:
-                os.remove(temp_file)
-                logger.info(f"清理临时文件: {temp_file}")
+                import shutil
+                shutil.rmtree(temp_dir)
+                logger.info(f"清理临时目录: {temp_dir}")
             except Exception as e:
-                logger.error(f"清理临时文件失败: {temp_file}, 错误: {e}")
+                logger.error(f"清理临时目录失败: {temp_dir}, 错误: {e}")
+
 
 
 def execute_hpl(file_path):
