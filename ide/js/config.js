@@ -85,15 +85,21 @@ const HPLConfig = {
      */
     async testConnection() {
         try {
+            // 创建 AbortController 实现超时（兼容 Firefox/Safari）
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            
             const response = await fetch(this.buildApiUrl('/health'), {
-
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json'
                 },
-                // 使用较短的超时进行健康检查
-                signal: AbortSignal.timeout(5000)
+                // 使用 AbortController 实现超时
+                signal: controller.signal
             });
+            
+            // 请求成功，清除超时
+            clearTimeout(timeoutId);
             
             if (response.ok) {
                 const data = await response.json();
@@ -105,6 +111,7 @@ const HPLConfig = {
             return { success: false, error: error.message };
         }
     }
+
 };
 
 // 导出配置对象
