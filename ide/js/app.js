@@ -520,10 +520,50 @@ function clearOutput() {
 }
 
 // 文件树操作
-function refreshFileTree() {
-    // 这里可以实现从服务器获取文件列表
-    console.log('刷新文件树');
+async function refreshFileTree() {
+    const fileTree = document.getElementById('file-tree');
+    
+    try {
+        const apiUrl = HPLConfig.buildApiUrl('/examples');
+        const response = await fetch(apiUrl);
+        const result = await response.json();
+        
+        if (result.success && result.examples) {
+            // 清空现有内容
+            fileTree.innerHTML = '';
+            
+            // 添加文件夹节点
+            const folderDiv = document.createElement('div');
+            folderDiv.className = 'file-item folder expanded';
+            folderDiv.dataset.path = 'examples';
+            folderDiv.innerHTML = `
+                <span class="file-icon">📂</span>
+                <span class="file-name">examples</span>
+            `;
+            fileTree.appendChild(folderDiv);
+            
+            // 添加所有示例文件
+            result.examples.forEach(example => {
+                const fileDiv = document.createElement('div');
+                fileDiv.className = 'file-item file';
+                fileDiv.dataset.path = `examples/${example.name}`;
+                fileDiv.style.paddingLeft = '20px';
+                fileDiv.innerHTML = `
+                    <span class="file-icon">📄</span>
+                    <span class="file-name">${example.name}</span>
+                `;
+                fileTree.appendChild(fileDiv);
+            });
+            
+            console.log(`文件树已刷新，共 ${result.examples.length} 个文件`);
+        } else {
+            console.error('获取文件列表失败:', result.error);
+        }
+    } catch (error) {
+        console.error('刷新文件树失败:', error);
+    }
 }
+
 
 function loadExample(filename) {
     // 从后端 API 加载示例文件
@@ -594,17 +634,22 @@ document.addEventListener('DOMContentLoaded', () => {
         loadExample('example.hpl');
     });
     
-    // 文件树点击
-    document.querySelectorAll('.file-item').forEach(item => {
-        item.addEventListener('click', () => {
-            const path = item.dataset.path;
-            if (path && !item.classList.contains('folder')) {
-                // 从路径提取文件名
-                const filename = path.split('/').pop();
-                loadExample(filename);
-            }
-        });
+    // 文件树点击（使用事件委托，支持动态添加的元素）
+    document.getElementById('file-tree').addEventListener('click', (e) => {
+        const item = e.target.closest('.file-item');
+        if (!item) return;
+        
+        const path = item.dataset.path;
+        if (path && !item.classList.contains('folder')) {
+            // 从路径提取文件名
+            const filename = path.split('/').pop();
+            loadExample(filename);
+        }
     });
+    
+    // 页面加载时自动刷新文件树
+    refreshFileTree();
+
     
     // 键盘快捷键
     document.addEventListener('keydown', (e) => {
