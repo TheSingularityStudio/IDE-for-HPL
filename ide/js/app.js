@@ -197,14 +197,9 @@ function initMonaco() {
                         markFileAsModified(HPLIDE.currentFile, true);
                     }
                 });
-
-                // 隐藏欢迎页面
-                const welcomePage = document.getElementById('welcome-page');
-                if (welcomePage) {
-                    welcomePage.style.display = 'none';
-                }
                 
                 console.log('Monaco Editor 初始化完成');
+
             } catch (error) {
                 console.error('Monaco Editor 初始化失败:', error);
                 showOutput('编辑器初始化失败: ' + error.message, 'error');
