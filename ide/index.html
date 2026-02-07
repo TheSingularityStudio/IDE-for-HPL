@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HPL IDE - H Programming Language</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Monaco Editor -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- 工具栏 -->
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <span class="logo">HPL IDE</span>
+                <button id="btn-new" class="toolbar-btn" title="新建文件 (Ctrl+N)">
+                    <span class="icon">📄</span> 新建
+                </button>
+                <button id="btn-open" class="toolbar-btn" title="打开文件 (Ctrl+O)">
+                    <span class="icon">📂</span> 打开
+                </button>
+                <button id="btn-save" class="toolbar-btn" title="保存文件 (Ctrl+S)">
+                    <span class="icon">💾</span> 保存
+                </button>
+                <div class="toolbar-separator"></div>
+                <button id="btn-run" class="toolbar-btn run-btn" title="运行 (F5)">
+                    <span class="icon">▶️</span> 运行
+                </button>
+            </div>
+            <div class="toolbar-right">
+                <span id="status-indicator" class="status-ready">就绪</span>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-container">
+            <!-- 文件资源管理器 -->
+            <div class="sidebar" id="sidebar">
+                <div class="sidebar-header">
+                    <span class="sidebar-title">📁 文件资源管理器</span>
+                    <button id="btn-refresh" class="icon-btn" title="刷新">🔄</button>
+                </div>
+                <div class="file-tree" id="file-tree">
+                    <div class="file-item folder expanded" data-path="examples">
+                        <span class="file-icon">📂</span>
+                        <span class="file-name">examples</span>
+                    </div>
+                    <div class="file-item file" data-path="examples/example.hpl" style="padding-left: 20px;">
+                        <span class="file-icon">📄</span>
+                        <span class="file-name">example.hpl</span>
+                    </div>
+                    <div class="file-item file" data-path="examples/test_new_features.hpl" style="padding-left: 20px;">
+                        <span class="file-icon">📄</span>
+                        <span class="file-name">test_new_features.hpl</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 编辑器区域 -->
+            <div class="editor-container">
+                <!-- 标签页 -->
+                <div class="tabs-container" id="tabs-container">
+                    <div class="tab active" data-file="welcome">
+                        <span class="tab-icon">👋</span>
+                        <span class="tab-title">欢迎使用</span>
+                    </div>
+                </div>
+
+                <!-- 编辑器 -->
+                <div class="editor-wrapper">
+                    <div id="editor"></div>
+                    <div id="welcome-page" class="welcome-page">
+                        <div class="welcome-content">
+                            <h1>🚀 HPL IDE</h1>
+                            <p class="subtitle">H Programming Language 集成开发环境</p>
+                            
+                            <div class="welcome-section">
+                                <h3>快速开始</h3>
+                                <div class="quick-actions">
+                                    <button class="action-btn" id="action-new">
+                                        <span class="action-icon">📄</span>
+                                        <span>新建文件</span>
+                                    </button>
+                                    <button class="action-btn" id="action-open">
+                                        <span class="action-icon">📂</span>
+                                        <span>打开文件</span>
+                                    </button>
+                                    <button class="action-btn" id="action-example">
+                                        <span class="action-icon">📋</span>
+                                        <span>打开示例</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="welcome-section">
+                                <h3>关于 HPL</h3>
+                                <p>HPL（H Programming Language）是一种基于 YAML 格式的面向对象编程语言，使用动态类型。</p>
+                                <ul class="feature-list">
+                                    <li>📝 YAML 格式语法</li>
+                                    <li>🏗️ 面向对象（类、继承、对象）</li>
+                                    <li>🔄 控制流（if/else、for、while）</li>
+                                    <li>📦 标准库模块（math、io、json、os、time）</li>
+                                    <li>⚡ 内置函数（echo、len、type 等）</li>
+                                </ul>
+                            </div>
+
+                            <div class="welcome-section">
+                                <h3>快捷键</h3>
+                                <div class="shortcuts">
+                                    <div class="shortcut"><kbd>Ctrl+N</kbd> 新建文件</div>
+                                    <div class="shortcut"><kbd>Ctrl+O</kbd> 打开文件</div>
+                                    <div class="shortcut"><kbd>Ctrl+S</kbd> 保存文件</div>
+                                    <div class="shortcut"><kbd>F5</kbd> 运行程序</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部面板 -->
+        <div class="bottom-panel">
+            <div class="panel-tabs">
+                <div class="panel-tab active" data-panel="output">📤 输出</div>
+                <div class="panel-tab" data-panel="problems">⚠️ 问题</div>
+            </div>
+            <div class="panel-content">
+                <div id="output-panel" class="output-panel">
+                    <div class="output-header">
+                        <span>程序输出</span>
+                        <button id="btn-clear-output" class="icon-btn">🗑️</button>
+                    </div>
+                    <pre id="output-content" class="output-content"></pre>
+                </div>
+                <div id="problems-panel" class="problems-panel hidden">
+                    <div class="problems-list" id="problems-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 状态栏 -->
+        <div class="statusbar">
+            <div class="statusbar-left">
+                <span id="file-info">未选择文件</span>
+                <span class="separator">|</span>
+                <span id="cursor-info">行 1, 列 1</span>
+            </div>
+            <div class="statusbar-right">
+                <span id="language-mode">HPL</span>
+                <span class="separator">|</span>
+                <span id="encoding">UTF-8</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 隐藏的文件输入 -->
+    <input type="file" id="file-input" accept=".hpl,.yaml,.yml" style="display: none;">
+    
+    <!-- 保存文件对话框 -->
+    <div id="save-dialog" class="dialog hidden">
+        <div class="dialog-content">
+            <h3>保存文件</h3>
+            <input type="text" id="save-filename" placeholder="输入文件名 (例如: main.hpl)">
+            <div class="dialog-buttons">
+                <button id="btn-save-confirm" class="btn-primary">保存</button>
+                <button id="btn-save-cancel">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
