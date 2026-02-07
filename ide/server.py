@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 HPL IDE 后端服务器
 提供 HPL 代码执行 API
@@ -10,6 +11,7 @@ HPL IDE 后端服务器
 """
 
 import sys
+
 import os
 import tempfile
 import signal
@@ -29,16 +31,27 @@ logger = logging.getLogger(__name__)
 # 添加 hpl_runtime 到路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# 检查 hpl-runtime 是否已安装
+try:
+    import hpl_runtime
+except ImportError:
+    logger.error("hpl-runtime 未安装。请运行: pip install hpl-runtime")
+    print("错误: hpl-runtime 未安装。请运行: pip install hpl-runtime")
+    sys.exit(1)
+
+
 app = Flask(__name__, static_folder='.', static_url_path='')
 
-# 配置 CORS - 只允许特定来源
+# 配置 CORS - 只允许特定来源（生产环境应限制具体端口）
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:*", "http://127.0.0.1:*"],
+        "origins": ["http://localhost:5000", "http://127.0.0.1:5000", 
+                   "http://localhost:3000", "http://127.0.0.1:3000"],
         "methods": ["GET", "POST"],
         "allow_headers": ["Content-Type"]
     }
 })
+
 
 # 安全配置
 MAX_REQUEST_SIZE = 1024 * 1024  # 1MB
@@ -313,8 +326,27 @@ def execute_hpl(file_path):
             'output': output
         }
         
+    except ImportError as e:
+        # hpl_runtime 导入错误
+        error_msg = f"hpl-runtime 导入错误: {str(e)}"
+        logger.error(error_msg)
+        return {
+            'success': False,
+            'error': error_msg,
+            'hint': '请确保已安装 hpl-runtime: pip install hpl-runtime'
+        }
+    except SyntaxError as e:
+        # HPL 代码语法错误
+        error_msg = f"HPL 语法错误 (行 {e.lineno}): {str(e)}"
+        logger.error(error_msg)
+        return {
+            'success': False,
+            'error': error_msg,
+            'line': e.lineno,
+            'type': 'syntax_error'
+        }
     except Exception as e:
-        # 返回错误信息
+        # 其他错误
         error_msg = str(e)
         
         # 尝试提取行号信息
@@ -327,6 +359,7 @@ def execute_hpl(file_path):
             'error': error_msg,
             'traceback': tb
         }
+
 
 
 @app.route('/api/examples', methods=['GET'])

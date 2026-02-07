@@ -388,22 +388,28 @@ function saveConfig() {
         return;
     }
     
-    try {
-        HPLConfig.saveConfig({
-            apiBaseUrl: apiUrl,
-            requestTimeout: timeout,
-            fontSize: fontSize,
-            editorTheme: theme
-        });
-        
-        // 应用字体大小
-        const editor = getEditor();
-        if (editor) {
-            editor.updateOptions({ fontSize: fontSize });
-        }
-        
-        hideConfigDialog();
-        showOutput('配置已保存', 'success');
+        try {
+            HPLConfig.saveConfig({
+                apiBaseUrl: apiUrl,
+                requestTimeout: timeout,
+                fontSize: fontSize,
+                editorTheme: theme
+            });
+            
+            // 应用字体大小
+            const editor = getEditor();
+            if (editor) {
+                editor.updateOptions({ fontSize: fontSize });
+            }
+            
+            // 应用主题
+            if (theme && monaco && monaco.editor) {
+                monaco.editor.setTheme(theme);
+            }
+            
+            hideConfigDialog();
+            showOutput('配置已保存', 'success');
+
     } catch (error) {
         showOutput('保存配置失败: ' + error.message, 'error');
     }

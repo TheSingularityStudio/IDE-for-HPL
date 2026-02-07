@@ -754,8 +754,22 @@ kbd {
     padding-top: 8px;
 }
 
+/* 辅助功能：视觉隐藏但保持可访问性 */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
+
     .sidebar {
         position: absolute;
         left: calc(-1 * var(--sidebar-width));
