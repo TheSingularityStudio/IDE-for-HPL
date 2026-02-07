@@ -754,6 +754,42 @@ kbd {
     padding-top: 8px;
 }
 
+/* 错误行高亮样式 */
+.error-line-highlight {
+    background-color: rgba(255, 0, 0, 0.15) !important;
+    border-left: 3px solid #f48771 !important;
+}
+
+.error-glyph-margin {
+    background-color: #f48771;
+    width: 10px !important;
+    height: 10px !important;
+    border-radius: 50%;
+    margin-left: 5px;
+}
+
+/* 自动保存复选框样式 */
+.checkbox-item {
+    display: flex;
+    align-items: center;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    cursor: pointer;
+}
+
+
 /* 辅助功能：视觉隐藏但保持可访问性 */
 .visually-hidden {
     position: absolute;

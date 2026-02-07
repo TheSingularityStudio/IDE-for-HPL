@@ -8,8 +8,9 @@ const HPLConfig = {
     defaults: {
         // 后端服务器地址
         apiBaseUrl: 'http://localhost:5000',
-        // 请求超时时间（毫秒）- 应与后端 MAX_EXECUTION_TIME 匹配（5秒 + 缓冲）
-        requestTimeout: 10000,
+        // 请求超时时间（毫秒）- 应与后端 MAX_EXECUTION_TIME 匹配（5秒 + 2秒缓冲）
+        requestTimeout: 7000,
+
 
         // 是否启用自动保存
         autoSave: false,

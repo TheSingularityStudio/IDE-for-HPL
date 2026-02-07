@@ -16,8 +16,11 @@ const HPLIDE = {
     editor: null,
     currentFile: null,
     openFiles: new Map(),
-    isRunning: false
+    isRunning: false,
+    autoSaveInterval: null,
+    errorDecorations: [] // 存储错误装饰器
 };
+
 
 // 获取编辑器实例的快捷方式
 const getEditor = () => HPLIDE.editor;
@@ -25,6 +28,144 @@ const getCurrentFile = () => HPLIDE.currentFile;
 const getOpenFiles = () => HPLIDE.openFiles;
 const getIsRunning = () => HPLIDE.isRunning;
 const setIsRunning = (value) => { HPLIDE.isRunning = value; };
+
+// 错误行高亮功能
+function highlightErrorLine(lineNumber, column = 1) {
+    const editor = getEditor();
+    if (!editor || !lineNumber) return;
+    
+    // 清除之前的错误高亮
+    clearErrorHighlights();
+    
+    // 添加新的错误高亮
+    const decoration = {
+        range: new monaco.Range(lineNumber, 1, lineNumber, 1),
+        options: {
+            isWholeLine: true,
+            className: 'error-line-highlight',
+            glyphMarginClassName: 'error-glyph-margin',
+            overviewRuler: {
+                color: 'rgba(255, 0, 0, 0.8)',
+                position: monaco.editor.OverviewRulerLane.Full
+            }
+        }
+    };
+    
+    HPLIDE.errorDecorations = editor.deltaDecorations([], [decoration]);
+    
+    // 滚动到错误行
+    editor.revealLineInCenter(lineNumber);
+    
+    // 设置光标位置
+    editor.setPosition({ lineNumber: lineNumber, column: column });
+}
+
+function clearErrorHighlights() {
+    const editor = getEditor();
+    if (!editor || HPLIDE.errorDecorations.length === 0) return;
+    
+    editor.deltaDecorations(HPLIDE.errorDecorations, []);
+    HPLIDE.errorDecorations = [];
+}
+
+// 自动保存功能
+function initAutoSave() {
+    // 清除现有的自动保存定时器
+    if (HPLIDE.autoSaveInterval) {
+        clearInterval(HPLIDE.autoSaveInterval);
+        HPLIDE.autoSaveInterval = null;
+    }
+    
+    const config = HPLConfig.getConfig();
+    if (!config.autoSave) return;
+    
+    // 设置新的自动保存定时器
+    HPLIDE.autoSaveInterval = setInterval(() => {
+        if (HPLIDE.currentFile && HPLIDE.openFiles.get(HPLIDE.currentFile)?.isModified) {
+            autoSaveCurrentFile();
+        }
+    }, config.autoSaveInterval || 5000);
+}
+
+function autoSaveCurrentFile() {
+    const editor = getEditor();
+    const currentFile = HPLIDE.currentFile;
+    if (!editor || !currentFile) return;
+    
+    const content = editor.getValue();
+    const fileData = HPLIDE.openFiles.get(currentFile);
+    if (!fileData) return;
+    
+    // 保存到 localStorage（作为临时存储）
+    try {
+        const autoSaveKey = `hpl-autosave-${currentFile}`;
+        localStorage.setItem(autoSaveKey, JSON.stringify({
+            content: content,
+            timestamp: Date.now(),
+            file: currentFile
+        }));
+        
+        // 更新状态但不标记为已保存（用户手动保存时才标记）
+        console.log(`自动保存: ${currentFile}`);
+        
+        // 显示自动保存指示器
+        showAutoSaveIndicator();
+    } catch (e) {
+        console.error('自动保存失败:', e);
+    }
+}
+
+function showAutoSaveIndicator() {
+    const fileInfo = document.getElementById('file-info');
+    if (!fileInfo) return;
+    
+    const originalText = fileInfo.textContent;
+    fileInfo.textContent = originalText + ' (已自动保存)';
+    fileInfo.style.color = 'var(--success-color)';
+    
+    setTimeout(() => {
+        fileInfo.textContent = originalText;
+        fileInfo.style.color = '';
+    }, 2000);
+}
+
+function restoreAutoSavedContent(filename) {
+    try {
+        const autoSaveKey = `hpl-autosave-${filename}`;
+        const saved = localStorage.getItem(autoSaveKey);
+        if (saved) {
+            const data = JSON.parse(saved);
+            if (data.content && data.timestamp) {
+                const age = Date.now() - data.timestamp;
+                const ageMinutes = Math.floor(age / 60000);
+                console.log(`找到自动保存的内容: ${filename} (${ageMinutes}分钟前)`);
+                return data.content;
+            }
+        }
+    } catch (e) {
+        console.error('恢复自动保存内容失败:', e);
+    }
+    return null;
+}
+
+// 加载指示器
+function showLoading(message = '加载中...') {
+    const statusIndicator = document.getElementById('status-indicator');
+    if (statusIndicator) {
+        statusIndicator.dataset.originalText = statusIndicator.textContent;
+        statusIndicator.textContent = `⏳ ${message}`;
+        statusIndicator.className = 'status-running';
+    }
+}
+
+function hideLoading() {
+    const statusIndicator = document.getElementById('status-indicator');
+    if (statusIndicator && statusIndicator.dataset.originalText) {
+        statusIndicator.textContent = statusIndicator.dataset.originalText;
+        statusIndicator.className = 'status-ready';
+    }
+}
+
 
 // HPL 自动补全提供程序
 const hplCompletionProvider = {
@@ -196,9 +337,15 @@ function initMonaco() {
                     if (HPLIDE.currentFile) {
                         markFileAsModified(HPLIDE.currentFile, true);
                     }
+                    // 清除错误高亮当用户编辑时
+                    clearErrorHighlights();
                 });
                 
+                // 初始化自动保存
+                initAutoSave();
+                
                 console.log('Monaco Editor 初始化完成');
+
 
             } catch (error) {
                 console.error('Monaco Editor 初始化失败:', error);
@@ -320,18 +467,21 @@ function showConfigDialog() {
         const timeoutInput = document.getElementById('config-timeout');
         const fontSizeInput = document.getElementById('config-font-size');
         const themeInput = document.getElementById('config-theme');
+        const autoSaveInput = document.getElementById('config-auto-save');
         const dialog = document.getElementById('config-dialog');
         
         if (apiUrlInput) apiUrlInput.value = config.apiBaseUrl;
         if (timeoutInput) timeoutInput.value = config.requestTimeout;
         if (fontSizeInput) fontSizeInput.value = config.fontSize;
         if (themeInput) themeInput.value = config.editorTheme;
+        if (autoSaveInput) autoSaveInput.checked = config.autoSave;
         if (dialog) dialog.classList.remove('hidden');
     } catch (error) {
         console.error('显示配置对话框失败:', error);
         showOutput('无法显示配置对话框', 'error');
     }
 }
+
 
 function hideConfigDialog() {
     const dialog = document.getElementById('config-dialog');
@@ -369,11 +519,13 @@ function saveConfig() {
     const timeoutInput = document.getElementById('config-timeout');
     const fontSizeInput = document.getElementById('config-font-size');
     const themeInput = document.getElementById('config-theme');
+    const autoSaveInput = document.getElementById('config-auto-save');
     
     const apiUrl = apiUrlInput?.value?.trim();
     const timeout = parseInt(timeoutInput?.value) || CONFIG.DEFAULT_TIMEOUT;
     const fontSize = parseInt(fontSizeInput?.value) || CONFIG.DEFAULT_FONT_SIZE;
     const theme = themeInput?.value || 'vs-dark';
+    const autoSave = autoSaveInput?.checked || false;
     
     if (!apiUrl) {
         showOutput('错误: API 地址不能为空', 'error');
@@ -388,32 +540,36 @@ function saveConfig() {
         return;
     }
     
-        try {
-            HPLConfig.saveConfig({
-                apiBaseUrl: apiUrl,
-                requestTimeout: timeout,
-                fontSize: fontSize,
-                editorTheme: theme
-            });
-            
-            // 应用字体大小
-            const editor = getEditor();
-            if (editor) {
-                editor.updateOptions({ fontSize: fontSize });
-            }
-            
-            // 应用主题
-            if (theme && monaco && monaco.editor) {
-                monaco.editor.setTheme(theme);
-            }
-            
-            hideConfigDialog();
-            showOutput('配置已保存', 'success');
-
+    try {
+        HPLConfig.saveConfig({
+            apiBaseUrl: apiUrl,
+            requestTimeout: timeout,
+            fontSize: fontSize,
+            editorTheme: theme,
+            autoSave: autoSave
+        });
+        
+        // 应用字体大小
+        const editor = getEditor();
+        if (editor) {
+            editor.updateOptions({ fontSize: fontSize });
+        }
+        
+        // 应用主题
+        if (theme && monaco && monaco.editor) {
+            monaco.editor.setTheme(theme);
+        }
+        
+        // 重新初始化自动保存
+        initAutoSave();
+        
+        hideConfigDialog();
+        showOutput('配置已保存', 'success');
     } catch (error) {
         showOutput('保存配置失败: ' + error.message, 'error');
     }
 }
+
 
 function resetConfig() {
     try {
@@ -424,17 +580,23 @@ function resetConfig() {
         const timeoutInput = document.getElementById('config-timeout');
         const fontSizeInput = document.getElementById('config-font-size');
         const themeInput = document.getElementById('config-theme');
+        const autoSaveInput = document.getElementById('config-auto-save');
         
         if (apiUrlInput) apiUrlInput.value = config.apiBaseUrl;
         if (timeoutInput) timeoutInput.value = config.requestTimeout;
         if (fontSizeInput) fontSizeInput.value = config.fontSize;
         if (themeInput) themeInput.value = config.editorTheme;
+        if (autoSaveInput) autoSaveInput.checked = config.autoSave;
+        
+        // 重新初始化自动保存
+        initAutoSave();
         
         showOutput('配置已重置为默认值', 'info');
     } catch (error) {
         showOutput('重置配置失败: ' + error.message, 'error');
     }
 }
+
 
 // 验证文件名合法性
 function isValidFilename(filename) {
@@ -676,6 +838,9 @@ async function runCode() {
         return;
     }
     
+    // 清除之前的错误高亮
+    clearErrorHighlights();
+    
     setIsRunning(true);
     const runBtn = document.getElementById('btn-run');
     const statusIndicator = document.getElementById('status-indicator');
@@ -719,7 +884,26 @@ async function runCode() {
         if (result.success) {
             showOutput(result.output || '程序执行完成（无输出）', 'success');
         } else {
-            showOutput('错误: ' + (result.error || '未知错误'), 'error');
+            // 显示错误信息
+            let errorMsg = result.error || '未知错误';
+            showOutput('错误: ' + errorMsg, 'error');
+            
+            // 如果有行号信息，高亮错误行
+            if (result.line) {
+                const lineNum = parseInt(result.line);
+                const column = result.column ? parseInt(result.column) : 1;
+                highlightErrorLine(lineNum, column);
+                
+                // 显示更详细的错误信息
+                if (result.type === 'syntax_error') {
+                    showOutput(`语法错误位于第 ${lineNum} 行${result.column ? `, 第 ${result.column} 列` : ''}`, 'error');
+                }
+            }
+            
+            // 如果有提示信息，显示提示
+            if (result.hint) {
+                showOutput('提示: ' + result.hint, 'info');
+            }
         }
     } catch (error) {
         if (error.name === 'AbortError') {
@@ -741,6 +925,7 @@ async function runCode() {
         }
     }
 }
+
 
 // 显示输出
 function showOutput(message, type = 'normal') {
@@ -767,7 +952,9 @@ async function refreshFileTree() {
     if (!fileTree) return;
     
     // 显示加载状态
+    showLoading('刷新文件列表...');
     fileTree.innerHTML = '<div class="file-item loading">⏳ 加载中...</div>';
+
     
     try {
         const apiUrl = HPLConfig.buildApiUrl('/examples');
@@ -821,6 +1008,7 @@ async function refreshFileTree() {
             });
             
             console.log(`文件树已刷新，共 ${result.examples.length} 个文件`);
+            hideLoading();
         } else {
             throw new Error(result.error || '获取文件列表失败');
         }
@@ -828,8 +1016,10 @@ async function refreshFileTree() {
         console.error('刷新文件树失败:', error);
         fileTree.innerHTML = `<div class="file-item error">❌ 加载失败: ${escapeHtml(error.message)}</div>`;
         showOutput('刷新文件树失败: ' + error.message, 'error');
+        hideLoading();
     }
 }
+
 
 // 统一使用 async/await 风格的 loadExample
 async function loadExample(filename) {
@@ -961,9 +1151,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 页面加载时自动刷新文件树
     refreshFileTree();
-
     
     // 键盘快捷键
+
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey) {
             switch(e.key) {
