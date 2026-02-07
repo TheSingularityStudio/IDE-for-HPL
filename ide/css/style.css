@@ -595,10 +595,34 @@ kbd {
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-.dialog-content h3 {
+.dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 16px;
+}
+
+.dialog-content h3 {
+    margin: 0;
     color: var(--text-highlight);
 }
+
+.dialog-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: 4px;
+}
+
+.dialog-close:hover {
+    background-color: var(--error-color);
+    color: white;
+}
+
 
 .dialog-content input {
     width: 100%;
@@ -680,7 +704,9 @@ kbd {
     margin-bottom: 6px;
     font-size: 13px;
     color: var(--text-secondary);
+    cursor: pointer;
 }
+
 
 .config-item input,
 .config-item select {

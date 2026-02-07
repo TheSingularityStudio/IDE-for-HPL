@@ -613,13 +613,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // 保存对话框
     document.getElementById('btn-save-confirm').addEventListener('click', confirmSave);
     document.getElementById('btn-save-cancel').addEventListener('click', hideSaveDialog);
+    document.getElementById('btn-save-close').addEventListener('click', hideSaveDialog);
     
     // 配置对话框
     document.getElementById('btn-config').addEventListener('click', showConfigDialog);
     document.getElementById('btn-config-cancel').addEventListener('click', hideConfigDialog);
+    document.getElementById('btn-config-close').addEventListener('click', hideConfigDialog);
     document.getElementById('btn-config-save').addEventListener('click', saveConfig);
     document.getElementById('btn-config-reset').addEventListener('click', resetConfig);
     document.getElementById('btn-test-connection').addEventListener('click', testServerConnection);
+
 
     
     // 面板切换
@@ -667,12 +670,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     e.preventDefault();
                     saveFile();
                     break;
+                case ',':
+                    if (!e.shiftKey) {
+                        e.preventDefault();
+                        showConfigDialog();
+                    }
+                    break;
             }
         } else if (e.key === 'F5') {
             e.preventDefault();
             runCode();
+        } else if (e.key === 'Escape') {
+            // ESC关闭打开的对话框
+            hideSaveDialog();
+            hideConfigDialog();
         }
     });
+
     
     console.log('HPL IDE 初始化完成');
 });
