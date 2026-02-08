@@ -155,7 +155,16 @@ const HPLUI = {
             
             bottomPanel.style.height = `${newHeight}px`;
             this._panelState.height = newHeight;
+            
+            // 如果面板之前是关闭状态，恢复面板样式和状态
+            if (this._panelState.isClosed) {
+                this._panelState.isClosed = false;
+                bottomPanel.style.overflow = '';
+                bottomPanel.style.borderTop = '';
+                this._hideCollapsedIndicator();
+            }
         });
+
         
         // 鼠标释放结束拖拽
         document.addEventListener('mouseup', () => {
