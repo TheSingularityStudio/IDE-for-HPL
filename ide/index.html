@@ -77,6 +77,16 @@
                     <span class="sidebar-title">📁 文件资源管理器</span>
                     <button type="button" id="btn-refresh" class="icon-btn" title="刷新文件列表" aria-label="刷新文件列表">🔄</button>
                 </div>
+                <!-- 面包屑导航（包含工作区/示例脚本切换） -->
+                <div id="breadcrumb-nav" class="breadcrumb-nav">
+                    <span class="breadcrumb-workspace-name">💼 工作区</span>
+                    <button class="breadcrumb-switch-btn" onclick="HPLFileManager.toggleMode()" title="切换工作区/示例脚本">
+                        <span>🔄 切换</span>
+                    </button>
+                </div>
+
+
+
                 <div class="file-tree" id="file-tree">
 
                     <div class="file-item folder expanded" data-path="examples">

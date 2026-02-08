@@ -275,91 +275,84 @@ const HPLApp = {
         fileTree.innerHTML = '<div class="file-item loading">⏳ 加载中...</div>';
         
         try {
-            // 使用新的文件树 API
-            const treeData = await HPLAPI.getFileTree();
+            // 获取当前模式并请求对应的文件树
+            const mode = HPLFileManager.currentMode || 'workspace';
+            const treeData = await HPLAPI.getFileTree(mode);
             
             // 设置文件树数据并渲染
             HPLFileManager.setFileTreeData(treeData);
             
             // 更新面包屑导航
-            this.updateBreadcrumb(treeData);
+            this.updateBreadcrumb(treeData, mode);
             
-            console.log('文件树已刷新');
+            console.log('文件树已刷新:', mode);
             HPLUI.hideLoading();
         } catch (error) {
             console.error('刷新文件树失败:', error);
-            // 如果新 API 失败，回退到旧 API
-            try {
-                const examples = await HPLAPI.listExamples();
-                const treeData = {
-                    name: 'examples',
-                    path: 'examples',
-                    type: 'folder',
-                    children: examples.map(ex => ({
-                        name: ex.name,
-                        path: `examples/${ex.name}`,
-                        type: 'file',
-                        size: ex.size
-                    }))
-                };
-                HPLFileManager.setFileTreeData(treeData);
-                this.updateBreadcrumb(treeData);
-                HPLUI.hideLoading();
-            } catch (fallbackError) {
-                fileTree.innerHTML = `<div class="file-item error">❌ 加载失败: ${HPLUtils.escapeHtml(error.message)}</div>`;
-                HPLUI.showOutput('刷新文件树失败: ' + error.message, 'error');
-                HPLUI.hideLoading();
-            }
+            fileTree.innerHTML = `<div class="file-item error">❌ 加载失败: ${HPLUtils.escapeHtml(error.message)}</div>`;
+            HPLUI.showOutput('刷新文件树失败: ' + error.message, 'error');
+            HPLUI.hideLoading();
         }
     },
 
+
     /**
      * 更新面包屑导航
+     * @param {Object} treeData - 文件树数据
+     * @param {string} mode - 当前模式：'workspace' 或 'examples'
      */
-    updateBreadcrumb(treeData) {
-        let breadcrumb = document.getElementById('breadcrumb-nav');
-        if (!breadcrumb) {
-            // 创建面包屑容器
-            const sidebar = document.getElementById('sidebar');
-            if (!sidebar) return;
-            
-            breadcrumb = document.createElement('div');
-            breadcrumb.id = 'breadcrumb-nav';
-            breadcrumb.className = 'breadcrumb-nav';
-            
-            const fileTree = document.getElementById('file-tree');
-            if (fileTree) {
-                sidebar.insertBefore(breadcrumb, fileTree);
-            }
+    updateBreadcrumb(treeData, mode) {
+        const breadcrumb = document.getElementById('breadcrumb-nav');
+        if (!breadcrumb) return;
+        
+        // 更新根元素（工作区/示例脚本切换按钮）
+        const rootName = mode === 'examples' ? '📚 示例脚本' : '💼 工作区';
+        const rootElement = breadcrumb.querySelector('.breadcrumb-root');
+        if (rootElement) {
+            rootElement.innerHTML = rootName;
+            rootElement.dataset.mode = mode;
+            rootElement.classList.add('active');
         }
         
-        // 构建面包屑路径
-        let pathParts = treeData.path.split('/');
+        // 构建面包屑路径（从根目录之后开始）
+        let pathParts = treeData.path.split('/').filter(p => p && p !== '.' && p !== mode);
         
-        // 处理根目录显示：将 "." 或空路径显示为 "工作区"
-        if (pathParts.length === 1 && (pathParts[0] === '.' || pathParts[0] === '')) {
-            pathParts = ['工作区'];
+        // 如果没有子路径，只显示根元素
+        if (pathParts.length === 0) {
+            // 清除旧的面包屑项（保留根元素）
+            const oldItems = breadcrumb.querySelectorAll('.breadcrumb-separator, .breadcrumb-item:not(.breadcrumb-root)');
+            oldItems.forEach(item => item.remove());
+            return;
         }
         
         let currentPath = '';
+        let breadcrumbHTML = '';
         
-        breadcrumb.innerHTML = pathParts.map((part, index) => {
+        pathParts.forEach((part, index) => {
             currentPath += (index === 0 ? '' : '/') + part;
             const isLast = index === pathParts.length - 1;
             
-            // 对于根目录，使用原始路径 "."
-            const navPath = part === '工作区' ? '.' : currentPath;
-            
-            return `
-                ${index > 0 ? '<span class="breadcrumb-separator">/</span>' : ''}
+            breadcrumbHTML += `
+                <span class="breadcrumb-separator">/</span>
                 <span class="breadcrumb-item ${isLast ? 'active' : ''}" 
-                      data-path="${navPath}"
-                      onclick="HPLApp.navigateToFolder('${navPath}')">
+                      data-path="${currentPath}"
+                      onclick="HPLApp.navigateToFolder('${currentPath}')">
                     ${HPLUtils.escapeHtml(part)}
                 </span>
             `;
-        }).join('');
+        });
+        
+        // 清除旧的面包屑项（保留根元素）
+        const oldItems = breadcrumb.querySelectorAll('.breadcrumb-separator, .breadcrumb-item:not(.breadcrumb-root)');
+        oldItems.forEach(item => item.remove());
+        
+        // 添加新的面包屑项
+        if (breadcrumbHTML) {
+            rootElement.insertAdjacentHTML('afterend', breadcrumbHTML);
+        }
     },
+
+
 
 
     /**
