@@ -100,8 +100,128 @@ const HPLAPI = {
         }
         
         return result;
+    },
+
+    /**
+     * 获取文件树
+     */
+    async getFileTree() {
+        const response = await fetch(HPLConfig.buildApiUrl('/files/tree'));
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '获取文件树失败');
+        }
+        
+        return result.tree;
+    },
+
+    /**
+     * 创建新文件
+     */
+    async createFile(path, content = '') {
+        const response = await fetch(HPLConfig.buildApiUrl('/files/create'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ path, content })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '创建文件失败');
+        }
+        
+        return result;
+    },
+
+    /**
+     * 创建新文件夹
+     */
+    async createFolder(path) {
+        const response = await fetch(HPLConfig.buildApiUrl('/folders/create'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ path })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '创建文件夹失败');
+        }
+        
+        return result;
+    },
+
+    /**
+     * 重命名文件或文件夹
+     */
+    async renameItem(oldPath, newPath) {
+        const response = await fetch(HPLConfig.buildApiUrl('/files/rename'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ oldPath, newPath })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '重命名失败');
+        }
+        
+        return result;
+    },
+
+    /**
+     * 删除文件或文件夹
+     */
+    async deleteItem(path) {
+        const response = await fetch(HPLConfig.buildApiUrl('/files/delete'), {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ path })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '删除失败');
+        }
+        
+        return result;
     }
 };
+
 
 // 导出模块
 if (typeof module !== 'undefined' && module.exports) {

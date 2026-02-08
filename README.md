@@ -54,13 +54,31 @@ python server.py
 ```
 IDE-for-HPL/
 ├── ide/                    # IDE 主目录
-│   ├── server.py           # Flask 后端服务器
+│   ├── server.py           # Flask 后端服务器主入口（精简版）
+│   ├── config.py           # 服务器配置常量
 │   ├── index.html          # IDE 主页面
 │   ├── css/
 │   │   └── style.css       # 样式文件
-│   └── js/
-│       ├── app.js          # 主应用逻辑
-│       └── config.js       # 配置管理
+│   ├── js/
+│   │   ├── app.js          # 主应用逻辑
+│   │   ├── api.js          # API 调用
+│   │   ├── config.js       # 配置管理
+│   │   ├── editor.js       # 编辑器功能
+│   │   ├── fileManager.js  # 文件管理
+│   │   ├── ui.js           # UI 组件
+│   │   └── utils.js        # 工具函数
+│   ├── routes/             # 路由模块
+│   │   ├── __init__.py     # 路由注册
+│   │   ├── api.py          # API 端点（/api/*）
+│   │   └── static.py       # 静态文件服务
+│   ├── services/           # 业务逻辑模块
+│   │   ├── __init__.py
+│   │   ├── code_executor.py   # HPL 代码执行
+│   │   ├── code_processor.py  # 代码预处理（清理、include 处理）
+│   │   └── security.py        # 安全验证、请求限制
+│   └── utils/              # 通用工具模块
+│       ├── __init__.py
+│       └── helpers.py      # 通用工具（超时执行）
 ├── examples/               # 示例 HPL 文件
 │   ├── example.hpl
 │   ├── base.hpl
@@ -70,6 +88,7 @@ IDE-for-HPL/
 │   └── hpl-runtime架构.md
 └── README.md
 ```
+
 
 ## 使用说明
 
