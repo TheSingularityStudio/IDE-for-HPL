@@ -6,6 +6,12 @@
 const HPLUI = {
     // 状态指示器原始文本缓存
     _originalStatusText: '',
+    
+    // 当前输出过滤器
+    _currentFilter: 'all',
+    
+    // 输出历史记录
+    _outputHistory: [],
 
     /**
      * 显示加载指示器
@@ -60,17 +66,78 @@ const HPLUI = {
         const line = document.createElement('div');
         line.className = `output-line output-${type}`;
         line.textContent = message;
+        
+        // 存储到历史记录
+        this._outputHistory.push({ message, type, timestamp: Date.now() });
+        
+        // 检查是否需要过滤
+        if (this._currentFilter !== 'all' && this._currentFilter !== type) {
+            line.classList.add('filtered');
+        }
+        
+        // 如果是错误消息，添加可点击的链接
+        if (type === 'error' && message.includes('行')) {
+            const lineMatch = message.match(/第\s*(\d+)\s*行/);
+            if (lineMatch) {
+                const lineNum = parseInt(lineMatch[1]);
+                line.innerHTML = this._createErrorLink(message, lineNum);
+            }
+        }
+        
         outputContent.appendChild(line);
         outputContent.scrollTop = outputContent.scrollHeight;
+    },
+
+    /**
+     * 创建可点击的错误链接
+     */
+    _createErrorLink(message, lineNum) {
+        return message.replace(
+            /第\s*(\d+)\s*行/,
+            `<span class="error-link" onclick="HPLEditor.goToLine(${lineNum})" title="点击跳转到第 ${lineNum} 行">第 ${lineNum} 行</span>`
+        );
+    },
+
+    /**
+     * 设置输出过滤器
+     */
+    setOutputFilter(filterType) {
+        this._currentFilter = filterType;
+        
+        const outputContent = document.getElementById('output-content');
+        if (!outputContent) return;
+        
+        const lines = outputContent.querySelectorAll('.output-line');
+        lines.forEach(line => {
+            const lineType = line.className.match(/output-(\w+)/)?.[1] || 'normal';
+            if (filterType === 'all' || lineType === filterType) {
+                line.classList.remove('filtered');
+            } else {
+                line.classList.add('filtered');
+            }
+        });
+        
+        // 更新按钮状态
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.filter === filterType);
+        });
     },
 
     /**
      * 清空输出面板
      */
     clearOutput() {
+        // 添加确认提示
+        if (this._outputHistory.length > 0) {
+            if (!confirm('确定要清空所有输出内容吗？')) {
+                return;
+            }
+        }
+        
         const outputContent = document.getElementById('output-content');
         if (outputContent) {
             outputContent.innerHTML = '';
+            this._outputHistory = [];
         }
     },
 
@@ -145,6 +212,26 @@ const HPLUI = {
      */
     hideConfigDialog() {
         const dialog = document.getElementById('config-dialog');
+        if (dialog) {
+            dialog.classList.add('hidden');
+        }
+    },
+
+    /**
+     * 显示快捷键帮助对话框
+     */
+    showShortcutsDialog() {
+        const dialog = document.getElementById('shortcuts-dialog');
+        if (dialog) {
+            dialog.classList.remove('hidden');
+        }
+    },
+
+    /**
+     * 隐藏快捷键帮助对话框
+     */
+    hideShortcutsDialog() {
+        const dialog = document.getElementById('shortcuts-dialog');
         if (dialog) {
             dialog.classList.add('hidden');
         }

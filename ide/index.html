@@ -58,6 +58,22 @@
                     <span class="icon">▶️</span> 运行
                 </button>
                 <div class="toolbar-separator"></div>
+                <button type="button" id="btn-theme-toggle" class="toolbar-btn" title="切换主题" aria-label="切换主题">
+                    <span class="icon" id="theme-icon">🌙</span>
+                </button>
+                <button type="button" id="btn-font-decrease" class="toolbar-btn" title="减小字体" aria-label="减小字体">
+                    <span class="icon">A-</span>
+                </button>
+                <button type="button" id="btn-font-increase" class="toolbar-btn" title="增大字体" aria-label="增大字体">
+                    <span class="icon">A+</span>
+                </button>
+                <button type="button" id="btn-word-wrap" class="toolbar-btn" title="切换自动换行" aria-label="切换自动换行">
+                    <span class="icon">↩️</span>
+                </button>
+                <button type="button" id="btn-shortcuts" class="toolbar-btn" title="快捷键帮助 (Ctrl+K)" aria-label="快捷键帮助">
+                    <span class="icon">⌨️</span>
+                </button>
+                <div class="toolbar-separator"></div>
                 <button type="button" id="btn-config" class="toolbar-btn" title="设置 (Ctrl+,)" aria-label="打开设置">
                     <span class="icon">⚙️</span> 设置
                 </button>
@@ -76,6 +92,10 @@
                 <div class="sidebar-header">
                     <span class="sidebar-title">📁 文件资源管理器</span>
                     <button type="button" id="btn-refresh" class="icon-btn" title="刷新文件列表" aria-label="刷新文件列表">🔄</button>
+                </div>
+                <!-- 文件搜索框 -->
+                <div class="file-search-container">
+                    <input type="text" id="file-search" class="file-search-input" placeholder="🔍 搜索文件..." aria-label="搜索文件">
                 </div>
                 <div class="file-tree" id="file-tree">
                     <div class="file-item loading">⏳ 加载中...</div>
@@ -167,11 +187,18 @@
             <div class="panel-content">
                 <div id="output-panel" class="output-panel">
                     <div class="output-header">
-                        <span>程序输出</span>
-                        <button type="button" id="btn-clear-output" class="icon-btn" title="清空输出" aria-label="清空输出">🗑️</button>
+                        <div class="output-filters">
+                            <button type="button" class="filter-btn active" data-filter="all" title="显示所有">全部</button>
+                            <button type="button" class="filter-btn" data-filter="error" title="仅显示错误">❌ 错误</button>
+                            <button type="button" class="filter-btn" data-filter="warning" title="仅显示警告">⚠️ 警告</button>
+                            <button type="button" class="filter-btn" data-filter="info" title="仅显示信息">ℹ️ 信息</button>
+                            <button type="button" class="filter-btn" data-filter="success" title="仅显示成功">✅ 成功</button>
+                        </div>
+                        <div class="output-actions">
+                            <button type="button" id="btn-clear-output" class="icon-btn" title="清空输出" aria-label="清空输出">🗑️</button>
+                        </div>
                     </div>
                     <pre id="output-content" class="output-content"></pre>
-
                 </div>
                 <div id="problems-panel" class="problems-panel hidden">
                     <div class="problems-list" id="problems-list"></div>
@@ -198,7 +225,6 @@
     <input type="file" id="file-input" accept=".hpl,.yaml,.yml" class="visually-hidden" aria-label="选择HPL文件">
 
     <!-- 保存文件对话框 -->
-
     <div id="save-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="save-dialog-title">
         <div class="dialog-content">
             <div class="dialog-header">
@@ -213,7 +239,6 @@
             </div>
         </div>
     </div>
-
 
     <!-- 配置对话框 -->
     <div id="config-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="config-dialog-title">
@@ -259,6 +284,43 @@
         </div>
     </div>
 
+    <!-- 快捷键帮助对话框 -->
+    <div id="shortcuts-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="shortcuts-dialog-title">
+        <div class="dialog-content shortcuts-dialog-content">
+            <div class="dialog-header">
+                <h3 id="shortcuts-dialog-title">⌨️ 快捷键参考</h3>
+                <button type="button" class="dialog-close" id="btn-shortcuts-close" aria-label="关闭对话框">×</button>
+            </div>
+            <div class="shortcuts-container">
+                <div class="shortcuts-category">
+                    <h4>文件操作</h4>
+                    <div class="shortcut-item"><kbd>Ctrl+N</kbd> <span>新建文件</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl+O</kbd> <span>打开文件</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl+S</kbd> <span>保存文件</span></div>
+                </div>
+                <div class="shortcuts-category">
+                    <h4>编辑</h4>
+                    <div class="shortcut-item"><kbd>Ctrl+F</kbd> <span>查找</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl+H</kbd> <span>查找替换</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl+G</kbd> <span>跳转到行</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl+Z</kbd> <span>撤销</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl+Y</kbd> <span>重做</span></div>
+                </div>
+                <div class="shortcuts-category">
+                    <h4>运行</h4>
+                    <div class="shortcut-item"><kbd>F5</kbd> <span>运行程序</span></div>
+                </div>
+                <div class="shortcuts-category">
+                    <h4>设置</h4>
+                    <div class="shortcut-item"><kbd>Ctrl+,</kbd> <span>打开设置</span></div>
+                    <div class="shortcut-item"><kbd>Ctrl+K</kbd> <span>快捷键帮助</span></div>
+                </div>
+            </div>
+            <div class="dialog-buttons">
+                <button type="button" id="btn-shortcuts-ok" class="btn-primary">确定</button>
+            </div>
+        </div>
+    </div>
 
     <script src="js/config.js"></script>
     <script src="js/utils.js"></script>
@@ -267,7 +329,6 @@
     <script src="js/api.js"></script>
     <script src="js/fileManager.js"></script>
     <script src="js/app.js"></script>
-
 
 </body>
 </html>

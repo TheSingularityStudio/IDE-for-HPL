@@ -149,7 +149,28 @@ const HPLApp = {
         if (btnClearOutput) btnClearOutput.addEventListener('click', () => HPLUI.clearOutput());
         if (btnConfig) btnConfig.addEventListener('click', () => this.showConfigDialog());
         
+        // 快速设置按钮
+        const btnThemeToggle = document.getElementById('btn-theme-toggle');
+        const btnFontDecrease = document.getElementById('btn-font-decrease');
+        const btnFontIncrease = document.getElementById('btn-font-increase');
+        const btnWordWrap = document.getElementById('btn-word-wrap');
+        const btnShortcuts = document.getElementById('btn-shortcuts');
+        
+        if (btnThemeToggle) btnThemeToggle.addEventListener('click', () => this.toggleTheme());
+        if (btnFontDecrease) btnFontDecrease.addEventListener('click', () => this.changeFontSize(-1));
+        if (btnFontIncrease) btnFontIncrease.addEventListener('click', () => this.changeFontSize(1));
+        if (btnWordWrap) btnWordWrap.addEventListener('click', () => this.toggleWordWrap());
+        if (btnShortcuts) btnShortcuts.addEventListener('click', () => this.showShortcutsDialog());
+        
+        // 文件搜索
+        const fileSearch = document.getElementById('file-search');
+        if (fileSearch) {
+            fileSearch.addEventListener('input', (e) => this.filterFileTree(e.target.value));
+        }
+        
         if (fileInput) {
+
+
             fileInput.addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if (file) {
@@ -194,7 +215,22 @@ const HPLApp = {
         if (btnConfigSave) btnConfigSave.addEventListener('click', () => this.saveConfig());
         if (btnConfigReset) btnConfigReset.addEventListener('click', () => this.resetConfig());
         if (btnTestConnection) btnTestConnection.addEventListener('click', () => this.testConnection());
+        
+        // 快捷键帮助对话框
+        const btnShortcutsClose = document.getElementById('btn-shortcuts-close');
+        const btnShortcutsOk = document.getElementById('btn-shortcuts-ok');
+        
+        if (btnShortcutsClose) btnShortcutsClose.addEventListener('click', () => HPLUI.hideShortcutsDialog());
+        if (btnShortcutsOk) btnShortcutsOk.addEventListener('click', () => HPLUI.hideShortcutsDialog());
+        
+        // 输出过滤器
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                HPLUI.setOutputFilter(btn.dataset.filter);
+            });
+        });
     },
+
 
     /**
      * 绑定面板事件
@@ -243,8 +279,13 @@ const HPLApp = {
                             this.showConfigDialog();
                         }
                         break;
+                    case 'k':
+                        e.preventDefault();
+                        this.showShortcutsDialog();
+                        break;
                 }
             } else if (e.key === 'F5') {
+
                 // F5 运行
                 e.preventDefault();
                 this.runCode();
@@ -540,8 +581,117 @@ const HPLApp = {
             btn.textContent = originalText;
             btn.disabled = false;
         }
+    },
+
+    /**
+     * 切换主题（深色/浅色）
+     */
+    toggleTheme() {
+        const config = HPLConfig.getConfig();
+        const currentTheme = config.editorTheme;
+        const newTheme = currentTheme === 'vs-dark' ? 'vs' : 'vs-dark';
+        
+        // 保存配置
+        HPLConfig.saveConfig({ editorTheme: newTheme });
+        
+        // 应用主题
+        HPLEditor.setTheme(newTheme);
+        
+        // 更新图标
+        const themeIcon = document.getElementById('theme-icon');
+        if (themeIcon) {
+            themeIcon.textContent = newTheme === 'vs-dark' ? '🌙' : '☀️';
+        }
+        
+        // 更新配置对话框中的值
+        const themeInput = document.getElementById('config-theme');
+        if (themeInput) themeInput.value = newTheme;
+        
+        HPLUI.showOutput(`主题已切换为: ${newTheme === 'vs-dark' ? '深色' : '浅色'}`, 'success');
+    },
+
+    /**
+     * 改变字体大小
+     */
+    changeFontSize(delta) {
+        const config = HPLConfig.getConfig();
+        const newSize = Math.max(8, Math.min(32, config.fontSize + delta));
+        
+        if (newSize !== config.fontSize) {
+            // 保存配置
+            HPLConfig.saveConfig({ fontSize: newSize });
+            
+            // 应用字体大小
+            HPLEditor.updateOptions({ fontSize: newSize });
+            
+            // 更新配置对话框中的值
+            const fontSizeInput = document.getElementById('config-font-size');
+            if (fontSizeInput) fontSizeInput.value = newSize;
+            
+            HPLUI.showOutput(`字体大小已调整为: ${newSize}px`, 'success');
+        }
+    },
+
+    /**
+     * 切换自动换行
+     */
+    toggleWordWrap() {
+        const config = HPLConfig.getConfig();
+        const currentWrap = config.wordWrap;
+        const newWrap = currentWrap === 'on' ? 'off' : 'on';
+        
+        // 保存配置
+        HPLConfig.saveConfig({ wordWrap: newWrap });
+        
+        // 应用设置
+        HPLEditor.updateOptions({ wordWrap: newWrap });
+        
+        // 更新按钮状态
+        const btnWordWrap = document.getElementById('btn-word-wrap');
+        if (btnWordWrap) {
+            btnWordWrap.style.opacity = newWrap === 'on' ? '1' : '0.5';
+        }
+        
+        HPLUI.showOutput(`自动换行已${newWrap === 'on' ? '启用' : '禁用'}`, 'success');
+    },
+
+    /**
+     * 显示快捷键帮助对话框
+     */
+    showShortcutsDialog() {
+        HPLUI.showShortcutsDialog();
+    },
+
+    /**
+     * 过滤文件树
+     */
+    filterFileTree(searchTerm) {
+        const fileTree = document.getElementById('file-tree');
+        if (!fileTree) return;
+        
+        const searchLower = searchTerm.toLowerCase();
+        const fileItems = fileTree.querySelectorAll('.file-item.file');
+        
+        fileItems.forEach(item => {
+            const fileName = item.querySelector('.file-name')?.textContent || '';
+            const fileNameLower = fileName.toLowerCase();
+            
+            if (searchLower === '' || fileNameLower.includes(searchLower)) {
+                item.classList.remove('hidden');
+                if (searchLower !== '' && fileNameLower.includes(searchLower)) {
+                    item.classList.add('highlighted');
+                } else {
+                    item.classList.remove('highlighted');
+                }
+            } else {
+                item.classList.add('hidden');
+                item.classList.remove('highlighted');
+            }
+        });
     }
 };
+
+
 
 // DOM 加载完成后初始化
 document.addEventListener('DOMContentLoaded', () => {
