@@ -398,9 +398,15 @@ def execute_hpl(file_path):
     使用 hpl_runtime 执行代码
     在受限环境中运行
     """
+    # 添加 examples 目录到 Python 模块搜索路径，以便导入自定义 Python 模块
+    examples_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'examples'))
+    if examples_dir not in sys.path:
+        sys.path.insert(0, examples_dir)
+    
     try:
         # 方法1: 直接导入执行
         from hpl_runtime.parser import HPLParser
+
         from hpl_runtime.evaluator import HPLEvaluator
         from hpl_runtime.models import ImportStatement
 
