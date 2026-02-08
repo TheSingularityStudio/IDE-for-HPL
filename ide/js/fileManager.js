@@ -192,10 +192,10 @@ call: main()
                 this.toggleFolder(path);
             } else {
                 // 打开文件
-                const filename = path.split('/').pop();
-                HPLApp.loadExample(filename);
+                this.openFileFromTree(path);
             }
         });
+
         
         // 右键菜单 - 支持文件项和空白区域
         fileTree.addEventListener('contextmenu', (e) => {
@@ -676,6 +676,27 @@ call: main()
         }
         return null;
     },
+
+    /**
+     * 从文件树打开文件
+     * @param {string} path - 文件路径
+     */
+    async openFileFromTree(path) {
+        try {
+            HPLUI.showOutput(`正在打开 ${path}...`, 'info');
+            
+            // 使用新的 readFile API 读取文件内容
+            const result = await HPLAPI.readFile(path, this.currentMode);
+            
+            // 在编辑器中打开文件
+            this.openFileInEditor(path, result.content, false);
+            
+            HPLUI.showOutput(`✅ 已打开: ${path}`, 'success');
+        } catch (error) {
+            HPLUI.showOutput('无法打开文件: ' + error.message, 'error');
+        }
+    },
+
 
 
     /**
