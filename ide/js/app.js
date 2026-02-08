@@ -23,6 +23,9 @@ const HPLApp = {
             // 初始化文件搜索
             this.initFileSearch();
             
+            // 初始化面板管理
+            HPLUI.initPanelManager();
+            
             // 绑定事件
             this.bindEvents();
             
@@ -35,6 +38,7 @@ const HPLApp = {
             HPLUI.showOutput('初始化失败: ' + error.message, 'error');
         }
     },
+
 
 
     /**
@@ -121,10 +125,34 @@ const HPLApp = {
      * 绑定面板事件
      */
     bindPanelEvents() {
+        // 面板标签切换
         document.querySelectorAll('.panel-tab').forEach(tab => {
             tab.addEventListener('click', () => HPLUI.switchPanel(tab.dataset.panel));
         });
+        
+        // 面板控制按钮
+        const btnMinimize = document.getElementById('btn-panel-minimize');
+        const btnMaximize = document.getElementById('btn-panel-maximize');
+        const btnClose = document.getElementById('btn-panel-close');
+        const btnRestore = document.getElementById('btn-panel-restore');
+        
+        if (btnMinimize) {
+            btnMinimize.addEventListener('click', () => HPLUI.minimizePanel());
+        }
+        
+        if (btnMaximize) {
+            btnMaximize.addEventListener('click', () => HPLUI.maximizePanel());
+        }
+        
+        if (btnClose) {
+            btnClose.addEventListener('click', () => HPLUI.closePanel());
+        }
+        
+        if (btnRestore) {
+            btnRestore.addEventListener('click', () => HPLUI.restorePanel());
+        }
     },
+
 
     /**
      * 绑定键盘快捷键
@@ -157,11 +185,16 @@ const HPLApp = {
                 // F5 运行
                 e.preventDefault();
                 this.runCode();
+            } else if (e.key === 'j' && (e.ctrlKey || e.metaKey)) {
+                // Ctrl+J 切换面板显示/隐藏
+                e.preventDefault();
+                HPLUI.togglePanel();
             } else if (e.key === 'Escape') {
                 // ESC 关闭对话框
                 HPLUI.hideSaveDialog();
                 HPLUI.hideConfigDialog();
             }
+
         });
     },
 

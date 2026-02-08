@@ -168,13 +168,24 @@
             </div>
         </div>
 
+        <!-- 面板调整手柄 -->
+        <div class="panel-resizer" id="panel-resizer" title="拖拽调整高度"></div>
+        
         <!-- 底部面板 -->
-        <div class="bottom-panel">
+        <div class="bottom-panel" id="bottom-panel">
 
             <div class="panel-tabs">
-                <div class="panel-tab active" data-panel="output">📤 输出</div>
-                <div class="panel-tab" data-panel="problems">⚠️ 问题</div>
+                <div class="panel-tabs-left">
+                    <div class="panel-tab active" data-panel="output">📤 输出</div>
+                    <div class="panel-tab" data-panel="problems">⚠️ 问题</div>
+                </div>
+                <div class="panel-controls">
+                    <button type="button" class="panel-control-btn" id="btn-panel-minimize" title="最小化面板" aria-label="最小化面板">⬇️</button>
+                    <button type="button" class="panel-control-btn" id="btn-panel-maximize" title="最大化面板" aria-label="最大化面板">⬆️</button>
+                    <button type="button" class="panel-control-btn" id="btn-panel-close" title="关闭面板" aria-label="关闭面板">✕</button>
+                </div>
             </div>
+
             <div class="panel-content">
                 <div id="output-panel" class="output-panel">
                     <div class="output-header">
@@ -188,7 +199,16 @@
                     <div class="problems-list" id="problems-list"></div>
                 </div>
             </div>
+            
+            <!-- 面板折叠状态提示 -->
+            <div class="panel-collapsed-indicator hidden" id="panel-collapsed-indicator">
+                <button type="button" class="panel-restore-btn" id="btn-panel-restore" title="展开面板" aria-label="展开面板">
+                    <span>📤 输出面板已折叠</span>
+                    <span>⬆️ 点击展开</span>
+                </button>
+            </div>
         </div>
+
 
         <!-- 状态栏 -->
         <div class="statusbar">
