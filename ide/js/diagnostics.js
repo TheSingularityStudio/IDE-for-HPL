@@ -89,6 +89,16 @@ const HPLDiagnostics = {
     },
     
     /**
+     * 检查当前文件是否为HPL文件
+     * @returns {boolean} 是否为HPL文件
+     */
+    isHPLFile() {
+        const currentFile = HPLFileManager.getCurrentFile();
+        if (!currentFile) return false;
+        return currentFile.toLowerCase().endsWith('.hpl');
+    },
+
+    /**
      * 设置内容变更监听
      */
     setupContentChangeListener() {
@@ -97,6 +107,9 @@ const HPLDiagnostics = {
         // 监听内容变化
         this.editor.onDidChangeModelContent((e) => {
             if (!this.config.autoCheck) return;
+            
+            // 只对HPL文件进行自动检查
+            if (!this.isHPLFile()) return;
             
             // 清除之前的待检查
             if (this.state.pendingCheck) {
@@ -109,6 +122,7 @@ const HPLDiagnostics = {
             }, this.config.debounceTime);
         });
     },
+
     
     /**
      * 执行语法检查
@@ -116,6 +130,13 @@ const HPLDiagnostics = {
      */
     async checkSyntax() {
         if (!this.editor || this.state.isChecking) {
+            return;
+        }
+        
+        // 只对HPL文件进行语法检查
+        if (!this.isHPLFile()) {
+            this.clearDiagnostics();
+            this.updateStatusBar({ valid: true, total_errors: 0, total_warnings: 0, isNonHPL: true });
             return;
         }
         
@@ -145,6 +166,7 @@ const HPLDiagnostics = {
             this.state.isChecking = false;
         }
     },
+
     
     /**
      * 调用API验证代码
@@ -338,6 +360,13 @@ const HPLDiagnostics = {
         const syntaxStatus = statusBar.querySelector('.syntax-status');
         if (!syntaxStatus) return;
         
+        // 非HPL文件，显示跳过状态
+        if (result.isNonHPL) {
+            syntaxStatus.innerHTML = '⏭️ 非HPL文件';
+            syntaxStatus.className = 'syntax-status skipped';
+            return;
+        }
+        
         const errorCount = result.total_errors || 0;
         const warningCount = result.total_warnings || 0;
         
@@ -353,6 +382,7 @@ const HPLDiagnostics = {
             syntaxStatus.className = 'syntax-status invalid';
         }
     },
+
     
     /**
      * 手动触发语法检查

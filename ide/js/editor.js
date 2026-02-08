@@ -356,10 +356,18 @@ const HPLEditor = {
      * 手动触发语法检查
      */
     checkSyntax() {
+        // 只对HPL文件进行语法检查
+        const currentFile = HPLFileManager.getCurrentFile();
+        if (!currentFile || !currentFile.toLowerCase().endsWith('.hpl')) {
+            console.log('跳过非HPL文件的语法检查:', currentFile);
+            return;
+        }
+        
         if (typeof HPLDiagnostics !== 'undefined') {
             HPLDiagnostics.manualCheck();
         }
     },
+
     
     /**
      * 设置自动语法检查

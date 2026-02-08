@@ -326,12 +326,22 @@ const HPLApp = {
             return;
         }
         
+        // 检查是否为HPL文件
+        const currentFile = HPLFileManager.getCurrentFile();
+        const isHPLFile = currentFile && currentFile.toLowerCase().endsWith('.hpl');
+        
         // 切换到问题面板
         HPLUI.switchPanel('problems');
         
         // 更新状态
         const syntaxStatus = document.getElementById('syntax-status');
         if (syntaxStatus) {
+            if (!isHPLFile) {
+                syntaxStatus.textContent = '⏭️ 非HPL文件';
+                syntaxStatus.className = 'syntax-status skipped';
+                HPLUI.showOutput('非HPL文件，跳过语法检查', 'info');
+                return;
+            }
             syntaxStatus.textContent = '⏳ 检查中...';
             syntaxStatus.className = 'syntax-status checking';
         }
@@ -350,6 +360,7 @@ const HPLApp = {
             }
         }
     },
+
 
     /**
      * 刷新文件树

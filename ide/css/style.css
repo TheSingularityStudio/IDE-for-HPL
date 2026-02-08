@@ -779,7 +779,13 @@ kbd {
     color: var(--warning-color);
 }
 
+.syntax-status.skipped {
+    background-color: rgba(133, 133, 133, 0.2);
+    color: var(--text-secondary);
+}
+
 /* 状态栏 */
+
 .statusbar {
     height: var(--statusbar-height);
     background-color: var(--accent-color);
