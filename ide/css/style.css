@@ -282,17 +282,20 @@ body {
 
 /* 欢迎页面 */
 .welcome-page {
-    position: absolute;
-    top: 0;
-    left: 0;
+    position: fixed;
+    top: var(--toolbar-height);
+    left: var(--sidebar-width);
     right: 0;
-    bottom: 0;
+    bottom: calc(var(--statusbar-height) + var(--panel-height));
     background-color: var(--bg-primary);
     display: flex;
     align-items: center;
     justify-content: center;
     overflow-y: auto;
+    z-index: 10;
 }
+
+
 
 .welcome-content {
     max-width: 600px;
