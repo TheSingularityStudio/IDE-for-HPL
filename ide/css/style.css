@@ -127,7 +127,9 @@ body {
     flex: 1;
     overflow: hidden;
     min-height: 0; /* 确保flex容器可以正确收缩 */
+    position: relative;
 }
+
 
 
 /* 侧边栏 */
@@ -223,7 +225,9 @@ body {
     flex-direction: column;
     overflow: hidden;
     min-height: 0; /* 确保flex子项可以正确收缩 */
+    position: relative;
 }
+
 
 
 /* 标签页 */
@@ -286,13 +290,38 @@ body {
     position: relative;
     overflow: hidden;
     min-height: 0; /* 确保可以正确收缩 */
+    display: flex;
+    flex-direction: column;
 }
 
 
 #editor {
-    width: 100%;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
+
+/* 确保 Monaco Editor 内容区域正确显示最后一行 */
+.monaco-editor .overflow-guard {
+    position: relative;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.monaco-editor .editor-scrollable {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* 为编辑器内容底部添加内边距，确保最后一行可见 */
+.monaco-editor .lines-content {
+    padding-bottom: 20px !important;
+}
+
+
 
 /* 欢迎页面 */
 .welcome-page {

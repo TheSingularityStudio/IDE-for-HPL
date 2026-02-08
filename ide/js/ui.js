@@ -117,6 +117,19 @@ const HPLUI = {
     },
 
     /**
+     * 触发编辑器重新布局
+     */
+    _triggerEditorLayout() {
+        // 使用 requestAnimationFrame 确保在 DOM 更新后触发
+        requestAnimationFrame(() => {
+            if (HPLEditor.instance) {
+                HPLEditor.instance.layout();
+            }
+        });
+    },
+
+
+    /**
      * 初始化面板拖拽调整大小功能
      */
     _initPanelResizer() {
@@ -163,7 +176,11 @@ const HPLUI = {
                 bottomPanel.style.borderTop = '';
                 this._hideCollapsedIndicator();
             }
+            
+            // 触发编辑器重新布局
+            this._triggerEditorLayout();
         });
+
 
         
         // 鼠标释放结束拖拽
@@ -176,9 +193,13 @@ const HPLUI = {
                 
                 // 保存状态
                 this._savePanelState();
+                
+                // 确保编辑器布局更新
+                this._triggerEditorLayout();
             }
         });
     },
+
 
     /**
      * 最大化面板
