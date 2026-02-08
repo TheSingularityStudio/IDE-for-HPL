@@ -542,6 +542,366 @@ call: main()
      */
     getOpenFiles() {
         return Array.from(this.openFiles.keys());
+    },
+
+    /**
+     * 初始化拖放支持
+     */
+    initDragAndDrop() {
+
+        const editorElement = document.getElementById('editor');
+        const fileTree = document.getElementById('file-tree');
+        const sidebar = document.getElementById('sidebar');
+        
+        // 编辑器拖放 - 打开文件
+        if (editorElement) {
+            editorElement.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                editorElement.classList.add('drag-over');
+            });
+            
+            editorElement.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                editorElement.classList.remove('drag-over');
+            });
+            
+            editorElement.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                editorElement.classList.remove('drag-over');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    // 只处理第一个文件
+                    const file = files[0];
+                    if (this._isValidFileType(file.name)) {
+                        this.openFromFileInput(file);
+                        HPLUI.showOutput(`📂 已拖入文件: ${file.name}`, 'success');
+                    } else {
+                        HPLUI.showOutput(`❌ 不支持的文件类型: ${file.name}`, 'error');
+                    }
+                }
+            });
+        }
+        
+        // 文件树拖放 - 上传/移动文件
+        if (fileTree) {
+            fileTree.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                fileTree.classList.add('drag-over');
+            });
+            
+            fileTree.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                fileTree.classList.remove('drag-over');
+            });
+            
+            fileTree.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                fileTree.classList.remove('drag-over');
+                
+                const files = e.dataTransfer.files;
+                Array.from(files).forEach(file => {
+                    if (this._isValidFileType(file.name)) {
+                        // 这里可以实现上传到服务器的逻辑
+                        HPLUI.showOutput(`📤 准备上传: ${file.name}`, 'info');
+                    }
+                });
+            });
+        }
+        
+        // 防止默认拖放行为
+        document.addEventListener('dragover', (e) => {
+            if (e.target.closest('#editor') || e.target.closest('#file-tree')) {
+                return;
+            }
+            e.preventDefault();
+        });
+        
+        document.addEventListener('drop', (e) => {
+            if (e.target.closest('#editor') || e.target.closest('#file-tree')) {
+                return;
+            }
+            e.preventDefault();
+        });
+    },
+
+    /**
+     * 检查文件类型是否有效
+     */
+    _isValidFileType(filename) {
+        const validExtensions = ['.hpl', '.txt', '.yaml', '.yml', '.json', '.py'];
+        const ext = filename.slice(filename.lastIndexOf('.')).toLowerCase();
+        return validExtensions.includes(ext) || filename.endsWith('.hpl');
+    },
+
+    /**
+     * 初始化文件右键菜单
+     */
+    initContextMenu() {
+        const fileTree = document.getElementById('file-tree');
+        if (!fileTree) return;
+        
+        // 创建右键菜单元素
+        this._createContextMenuElement();
+        
+        // 绑定右键事件
+        fileTree.addEventListener('contextmenu', (e) => {
+            const fileItem = e.target.closest('.file-item');
+            if (!fileItem) return;
+            
+            e.preventDefault();
+            this._showContextMenu(e, fileItem);
+        });
+        
+        // 点击其他地方关闭菜单
+        document.addEventListener('click', () => {
+            this._hideContextMenu();
+        });
+    },
+
+    /**
+     * 创建右键菜单元素
+     */
+    _createContextMenuElement() {
+        // 移除已存在的菜单
+        const existingMenu = document.getElementById('file-context-menu');
+        if (existingMenu) {
+            existingMenu.remove();
+        }
+        
+        const menu = document.createElement('div');
+        menu.id = 'file-context-menu';
+        menu.className = 'context-menu hidden';
+        menu.innerHTML = `
+            <div class="context-menu-item" data-action="rename">
+                <span class="context-menu-icon">✏️</span>
+                <span>重命名</span>
+            </div>
+            <div class="context-menu-item" data-action="copy">
+                <span class="context-menu-icon">📋</span>
+                <span>复制</span>
+            </div>
+            <div class="context-menu-item" data-action="delete">
+                <span class="context-menu-icon">🗑️</span>
+                <span>删除</span>
+            </div>
+            <div class="context-menu-divider"></div>
+            <div class="context-menu-item" data-action="refresh">
+                <span class="context-menu-icon">🔄</span>
+                <span>刷新</span>
+            </div>
+        `;
+        
+        document.body.appendChild(menu);
+        
+        // 绑定菜单项点击事件
+        menu.addEventListener('click', (e) => {
+            const item = e.target.closest('.context-menu-item');
+            if (!item) return;
+            
+            const action = item.dataset.action;
+            const targetFile = menu.dataset.targetFile;
+            
+            switch(action) {
+                case 'rename':
+                    this._startRenameFile(targetFile);
+                    break;
+                case 'copy':
+                    this._copyFile(targetFile);
+                    break;
+                case 'delete':
+                    this._deleteFile(targetFile);
+                    break;
+                case 'refresh':
+                    if (typeof HPLApp !== 'undefined') {
+                        HPLApp.refreshFileTree();
+                    }
+                    break;
+            }
+            
+            this._hideContextMenu();
+        });
+    },
+
+    /**
+     * 显示右键菜单
+     */
+    _showContextMenu(e, fileItem) {
+        const menu = document.getElementById('file-context-menu');
+        if (!menu) return;
+        
+        const filename = fileItem.querySelector('.file-name')?.textContent;
+        if (!filename) return;
+        
+        menu.dataset.targetFile = filename;
+        
+        // 定位菜单
+        const x = e.pageX;
+        const y = e.pageY;
+        
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+        menu.classList.remove('hidden');
+        
+        // 确保菜单不超出视口
+        const rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+            menu.style.left = `${x - rect.width}px`;
+        }
+        if (rect.bottom > window.innerHeight) {
+            menu.style.top = `${y - rect.height}px`;
+        }
+    },
+
+    /**
+     * 隐藏右键菜单
+     */
+    _hideContextMenu() {
+        const menu = document.getElementById('file-context-menu');
+        if (menu) {
+            menu.classList.add('hidden');
+        }
+    },
+
+    /**
+     * 开始重命名文件
+     */
+    _startRenameFile(oldFilename) {
+        const newFilename = prompt('请输入新文件名:', oldFilename);
+        if (!newFilename || newFilename === oldFilename) return;
+        
+        if (!HPLUtils.isValidFilename(newFilename)) {
+            HPLUI.showOutput('❌ 文件名无效', 'error');
+            return;
+        }
+        
+        // 如果文件已打开，更新标签页
+        if (this.openFiles.has(oldFilename)) {
+            const fileData = this.openFiles.get(oldFilename);
+            this.openFiles.delete(oldFilename);
+            this.openFiles.set(newFilename, fileData);
+            
+            if (this.currentFile === oldFilename) {
+                this.currentFile = newFilename;
+            }
+            
+            // 更新标签页
+            HPLUI.removeTab(oldFilename);
+            this.createTab(newFilename, fileData.isModified ? newFilename + '*' : newFilename);
+            HPLUI.switchTab(newFilename);
+        }
+        
+        HPLUI.showOutput(`✅ 已重命名: ${oldFilename} → ${newFilename}`, 'success');
+    },
+
+    /**
+     * 复制文件
+     */
+    _copyFile(filename) {
+        const newFilename = this._generateCopyFilename(filename);
+        
+        if (this.openFiles.has(filename)) {
+            const fileData = this.openFiles.get(filename);
+            this.openFileInEditor(newFilename, fileData.content, true);
+        }
+        
+        HPLUI.showOutput(`📋 已复制: ${filename} → ${newFilename}`, 'success');
+    },
+
+    /**
+     * 生成复制文件名
+     */
+    _generateCopyFilename(filename) {
+        const dotIndex = filename.lastIndexOf('.');
+        const name = dotIndex > 0 ? filename.slice(0, dotIndex) : filename;
+        const ext = dotIndex > 0 ? filename.slice(dotIndex) : '';
+        
+        let copyName = `${name}_copy${ext}`;
+        let counter = 1;
+        
+        while (this.openFiles.has(copyName)) {
+            copyName = `${name}_copy${counter}${ext}`;
+            counter++;
+        }
+        
+        return copyName;
+    },
+
+    /**
+     * 删除文件
+     */
+    _deleteFile(filename) {
+        if (!confirm(`确定要删除文件 "${filename}" 吗？`)) {
+            return;
+        }
+        
+        // 如果文件已打开，先关闭
+        if (this.openFiles.has(filename)) {
+            this.closeFile(filename);
+        }
+        
+        HPLUI.showOutput(`🗑️ 已删除: ${filename}`, 'success');
+    },
+
+    /**
+     * 获取文件图标
+     */
+    getFileIcon(filename, isFolder = false, isExpanded = false) {
+        if (isFolder) {
+            return isExpanded ? '📂' : '📁';
+        }
+        
+        const ext = filename.slice(filename.lastIndexOf('.')).toLowerCase();
+        
+        const iconMap = {
+            '.hpl': '📄',
+            '.py': '🐍',
+            '.js': '📜',
+            '.html': '🌐',
+            '.css': '🎨',
+            '.json': '📋',
+            '.yaml': '📋',
+            '.yml': '📋',
+            '.txt': '📝',
+            '.md': '📖',
+            '.xml': '📰',
+            '.sql': '🗄️',
+            '.sh': '⌨️',
+            '.bat': '⌨️',
+            '.log': '📜',
+            '.ini': '⚙️',
+            '.conf': '⚙️',
+            '.config': '⚙️'
+        };
+        
+        return iconMap[ext] || '📄';
+    },
+
+    /**
+     * 更新文件树图标
+     */
+    updateFileTreeIcons() {
+        const fileTree = document.getElementById('file-tree');
+        if (!fileTree) return;
+        
+        fileTree.querySelectorAll('.file-item').forEach(item => {
+            const fileNameEl = item.querySelector('.file-name');
+            const iconEl = item.querySelector('.file-icon');
+            
+            if (fileNameEl && iconEl) {
+                const filename = fileNameEl.textContent;
+                const isFolder = item.classList.contains('folder');
+                const isExpanded = item.classList.contains('expanded');
+                
+                iconEl.textContent = this.getFileIcon(filename, isFolder, isExpanded);
+            }
+        });
     }
 };
 

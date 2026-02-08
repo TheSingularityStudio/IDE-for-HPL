@@ -44,6 +44,70 @@ const HPLUI = {
         if (fileInfo) {
             fileInfo.textContent = isModified ? `${filename}*` : filename;
         }
+        
+        // 同时更新面包屑导航
+        this.updateBreadcrumb(filename);
+    },
+
+    /**
+     * 更新面包屑导航
+     */
+    updateBreadcrumb(filename) {
+        const breadcrumbContent = document.getElementById('breadcrumb-content');
+        if (!breadcrumbContent) return;
+        
+        // 清空现有内容
+        breadcrumbContent.innerHTML = '';
+        
+        // 添加根节点
+        const rootItem = document.createElement('span');
+        rootItem.className = 'breadcrumb-item root';
+        rootItem.textContent = '📁 HPL IDE';
+        rootItem.addEventListener('click', () => {
+            HPLUI.showWelcomePage();
+        });
+        breadcrumbContent.appendChild(rootItem);
+        
+        if (!filename || filename === '未选择文件') {
+            return;
+        }
+        
+        // 解析文件路径
+        const pathParts = filename.split('/');
+        let currentPath = '';
+        
+        pathParts.forEach((part, index) => {
+            // 添加分隔符
+            const separator = document.createElement('span');
+            separator.className = 'breadcrumb-separator';
+            separator.textContent = '›';
+            breadcrumbContent.appendChild(separator);
+            
+            // 构建当前路径
+            currentPath = currentPath ? `${currentPath}/${part}` : part;
+            
+            // 创建路径项
+            const item = document.createElement('span');
+            item.className = 'breadcrumb-item';
+            if (index === pathParts.length - 1) {
+                item.classList.add('active');
+            }
+            item.textContent = part;
+            item.dataset.path = currentPath;
+            
+            // 添加点击事件
+            item.addEventListener('click', () => {
+                // 如果是文件，打开它
+                if (index === pathParts.length - 1 && HPLFileManager.openFiles.has(filename)) {
+                    HPLFileManager.switchToFile(filename);
+                } else {
+                    // 如果是文件夹，可以展开/折叠
+                    HPLUI.showOutput(`📂 导航到: ${currentPath}`, 'info');
+                }
+            });
+            
+            breadcrumbContent.appendChild(item);
+        });
     },
 
     /**
@@ -94,82 +158,70 @@ const HPLUI = {
     _createErrorLink(message, lineNum) {
         return message.replace(
             /第\s*(\d+)\s*行/,
-            `<span class="error-link" onclick="HPLEditor.goToLine(${lineNum})" title="点击跳转到第 ${lineNum} 行">第 ${lineNum} 行</span>`
+            `第 <span class="error-link" onclick="HPLEditor.goToLine(${lineNum})" title="点击跳转到第 ${lineNum} 行">${lineNum}</span> 行`
         );
     },
 
     /**
      * 设置输出过滤器
      */
-    setOutputFilter(filterType) {
-        this._currentFilter = filterType;
+    setOutputFilter(filter) {
+        this._currentFilter = filter;
         
+        // 更新按钮状态
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.filter === filter);
+        });
+        
+        // 应用过滤
         const outputContent = document.getElementById('output-content');
         if (!outputContent) return;
         
-        const lines = outputContent.querySelectorAll('.output-line');
-        lines.forEach(line => {
+        outputContent.querySelectorAll('.output-line').forEach(line => {
             const lineType = line.className.match(/output-(\w+)/)?.[1] || 'normal';
-            if (filterType === 'all' || lineType === filterType) {
+            if (filter === 'all' || lineType === filter) {
                 line.classList.remove('filtered');
             } else {
                 line.classList.add('filtered');
             }
         });
-        
-        // 更新按钮状态
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.filter === filterType);
-        });
     },
 
     /**
-     * 清空输出面板
+     * 清除输出
      */
     clearOutput() {
-        // 添加确认提示
-        if (this._outputHistory.length > 0) {
-            if (!confirm('确定要清空所有输出内容吗？')) {
-                return;
+        if (confirm('确定要清空所有输出内容吗？')) {
+            const outputContent = document.getElementById('output-content');
+            if (outputContent) {
+                outputContent.innerHTML = '';
             }
-        }
-        
-        const outputContent = document.getElementById('output-content');
-        if (outputContent) {
-            outputContent.innerHTML = '';
             this._outputHistory = [];
         }
     },
 
     /**
-     * 切换底部面板
+     * 显示自动保存指示器
      */
-    switchPanel(panelName) {
-        document.querySelectorAll('.panel-tab').forEach(tab => {
-            tab.classList.toggle('active', tab.dataset.panel === panelName);
-        });
-        
-        const outputPanel = document.getElementById('output-panel');
-        const problemsPanel = document.getElementById('problems-panel');
-        
-        if (outputPanel) {
-            outputPanel.classList.toggle('hidden', panelName !== 'output');
-        }
-        if (problemsPanel) {
-            problemsPanel.classList.toggle('hidden', panelName !== 'problems');
+    showAutoSaveIndicator() {
+        const fileInfo = document.getElementById('file-info');
+        if (fileInfo && !fileInfo.textContent.includes('💾')) {
+            fileInfo.textContent += ' 💾';
         }
     },
 
     /**
      * 显示保存对话框
      */
-    showSaveDialog(defaultFilename = 'untitled.hpl') {
+    showSaveDialog(defaultFilename) {
         const dialog = document.getElementById('save-dialog');
         const filenameInput = document.getElementById('save-filename');
+        
         if (dialog && filenameInput) {
+            filenameInput.value = defaultFilename || 'untitled.hpl';
             dialog.classList.remove('hidden');
-            filenameInput.value = defaultFilename;
             filenameInput.focus();
+            filenameInput.select();
         }
     },
 
@@ -187,23 +239,21 @@ const HPLUI = {
      * 显示配置对话框
      */
     showConfigDialog(config) {
-        try {
-            const apiUrlInput = document.getElementById('config-api-url');
-            const timeoutInput = document.getElementById('config-timeout');
-            const fontSizeInput = document.getElementById('config-font-size');
-            const themeInput = document.getElementById('config-theme');
-            const autoSaveInput = document.getElementById('config-auto-save');
-            const dialog = document.getElementById('config-dialog');
+        const dialog = document.getElementById('config-dialog');
+        const apiUrlInput = document.getElementById('config-api-url');
+        const timeoutInput = document.getElementById('config-timeout');
+        const fontSizeInput = document.getElementById('config-font-size');
+        const themeInput = document.getElementById('config-theme');
+        const autoSaveInput = document.getElementById('config-auto-save');
+        
+        if (dialog) {
+            if (apiUrlInput) apiUrlInput.value = config.apiBaseUrl || '';
+            if (timeoutInput) timeoutInput.value = config.requestTimeout || 7000;
+            if (fontSizeInput) fontSizeInput.value = config.fontSize || 14;
+            if (themeInput) themeInput.value = config.editorTheme || 'vs-dark';
+            if (autoSaveInput) autoSaveInput.checked = config.autoSave || false;
             
-            if (apiUrlInput) apiUrlInput.value = config.apiBaseUrl;
-            if (timeoutInput) timeoutInput.value = config.requestTimeout;
-            if (fontSizeInput) fontSizeInput.value = config.fontSize;
-            if (themeInput) themeInput.value = config.editorTheme;
-            if (autoSaveInput) autoSaveInput.checked = config.autoSave;
-            if (dialog) dialog.classList.remove('hidden');
-        } catch (error) {
-            console.error('显示配置对话框失败:', error);
-            this.showOutput('无法显示配置对话框', 'error');
+            dialog.classList.remove('hidden');
         }
     },
 
@@ -238,20 +288,18 @@ const HPLUI = {
     },
 
     /**
-     * 显示自动保存指示器
+     * 切换面板
      */
-    showAutoSaveIndicator() {
-        const fileInfo = document.getElementById('file-info');
-        if (!fileInfo) return;
+    switchPanel(panelName) {
+        // 更新标签页状态
+        document.querySelectorAll('.panel-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.panel === panelName);
+        });
         
-        const originalText = fileInfo.textContent;
-        fileInfo.textContent = originalText + ' (已自动保存)';
-        fileInfo.style.color = 'var(--success-color)';
-        
-        setTimeout(() => {
-            fileInfo.textContent = originalText;
-            fileInfo.style.color = '';
-        }, 2000);
+        // 显示/隐藏面板内容
+        document.querySelectorAll('.panel-content > div').forEach(panel => {
+            panel.classList.toggle('hidden', !panel.id.startsWith(panelName));
+        });
     },
 
     /**
@@ -321,6 +369,9 @@ const HPLUI = {
         if (welcomePage) {
             welcomePage.style.display = 'flex';
         }
+        
+        // 重置面包屑
+        this.updateBreadcrumb(null);
     },
 
     /**

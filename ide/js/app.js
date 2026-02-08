@@ -60,8 +60,15 @@ const HPLApp = {
             // 初始化文件管理器
             HPLFileManager.init();
             
+            // 初始化拖放支持
+            HPLFileManager.initDragAndDrop();
+            
+            // 初始化文件右键菜单
+            HPLFileManager.initContextMenu();
+            
             // 绑定事件
             this.bindEvents();
+
             
             // 刷新文件树
             this.refreshFileTree();
