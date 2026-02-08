@@ -123,14 +123,61 @@ def clean_code(code):
     """
     清理代码中的转义字符
     处理 PowerShell 等发送的转义换行符
+    注意：只在字符串外部处理转义，保留字符串内部的转义序列
     """
-    # 处理 PowerShell 风格的换行符转义
-    code = code.replace('`n', '\n')
-    # 处理其他可能的转义
-    code = code.replace('\\n', '\n')
-    code = code.replace('\\t', '\t')
-    code = code.replace('\\"', '"')
-    return code
+    result = []
+    i = 0
+    length = len(code)
+    in_string = False
+    
+    while i < length:
+        char = code[i]
+        
+        # 处理字符串边界
+        if char == '"':
+            # 检查是否是转义的引号
+            if i > 0 and code[i - 1] == '\\':
+                # 字符串内的转义引号，保留原样
+                result.append(char)
+                i += 1
+            else:
+                # 字符串边界
+                in_string = not in_string
+                result.append(char)
+                i += 1
+            continue
+        
+        # 如果在字符串内部，保留所有字符原样（除了继续检查字符串边界）
+        if in_string:
+            result.append(char)
+            i += 1
+            continue
+        
+        # 在字符串外部，处理转义字符
+        # 处理 PowerShell 风格的换行符转义
+        if char == '`' and i + 1 < length and code[i + 1] == 'n':
+            result.append('\n')
+            i += 2
+        # 处理 \n 转义
+        elif char == '\\' and i + 1 < length and code[i + 1] == 'n':
+            result.append('\n')
+            i += 2
+        # 处理 \t 转义
+        elif char == '\\' and i + 1 < length and code[i + 1] == 't':
+            result.append('\t')
+            i += 2
+        # 处理 \" 转义 - 只在字符串外部时处理（创建字符串边界）
+        elif char == '\\' and i + 1 < length and code[i + 1] == '"':
+            # 保留转义引号，让 HPL 解析器正确处理
+            result.append(char)
+            result.append(code[i + 1])
+            i += 2
+        else:
+            result.append(char)
+            i += 1
+    
+    return ''.join(result)
+
 
 
 def extract_includes(code):
