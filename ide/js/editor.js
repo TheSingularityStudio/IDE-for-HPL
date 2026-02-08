@@ -392,8 +392,137 @@ const HPLEditor = {
      */
     getPosition() {
         return this.instance ? this.instance.getPosition() : { lineNumber: 1, column: 1 };
+    },
+
+    /**
+     * 打开查找框 (Ctrl+F)
+     */
+    openFind() {
+        if (this.instance) {
+            this.instance.getAction('actions.find').run();
+        }
+    },
+
+    /**
+     * 打开查找替换框 (Ctrl+H)
+     */
+    openFindAndReplace() {
+        if (this.instance) {
+            this.instance.getAction('editor.action.startFindReplaceAction:').run();
+        }
+    },
+
+    /**
+     * 查找下一个
+     */
+    findNext() {
+        if (this.instance) {
+            this.instance.getAction('editor.action.nextMatchFindAction').run();
+        }
+    },
+
+    /**
+     * 查找上一个
+     */
+    findPrevious() {
+        if (this.instance) {
+            this.instance.getAction('editor.action.previousMatchFindAction').run();
+        }
+    },
+
+    /**
+     * 跳转到指定行 (Ctrl+G)
+     */
+    goToLine(lineNumber) {
+        if (this.instance && lineNumber > 0) {
+            this.instance.revealLineInCenter(lineNumber);
+            this.instance.setPosition({ lineNumber: lineNumber, column: 1 });
+            this.instance.focus();
+        }
+    },
+
+    /**
+     * 打开跳转到行对话框
+     */
+    openGoToLine() {
+        if (this.instance) {
+            this.instance.getAction('editor.action.gotoLine').run();
+        }
+    },
+
+    /**
+     * 格式化代码
+     */
+    formatDocument() {
+        if (this.instance) {
+            this.instance.getAction('editor.action.formatDocument').run();
+        }
+    },
+
+    /**
+     * 切换行号显示
+     */
+    toggleLineNumbers() {
+        if (this.instance) {
+            const current = this.instance.getOption(monaco.editor.EditorOption.lineNumbers);
+            this.instance.updateOptions({
+                lineNumbers: current === 'on' ? 'off' : 'on'
+            });
+        }
+    },
+
+    /**
+     * 切换自动换行
+     */
+    toggleWordWrap() {
+        if (this.instance) {
+            const current = this.instance.getOption(monaco.editor.EditorOption.wordWrap);
+            this.instance.updateOptions({
+                wordWrap: current === 'on' ? 'off' : 'on'
+            });
+        }
+    },
+
+    /**
+     * 切换 minimap
+     */
+    toggleMinimap() {
+        if (this.instance) {
+            const current = this.instance.getOption(monaco.editor.EditorOption.minimap);
+            this.instance.updateOptions({
+                minimap: { enabled: !current.enabled }
+            });
+        }
+    },
+
+    /**
+     * 全选
+     */
+    selectAll() {
+        if (this.instance) {
+            this.instance.setSelection(this.instance.getModel().getFullModelRange());
+        }
+    },
+
+    /**
+     * 撤销
+     */
+    undo() {
+        if (this.instance) {
+            this.instance.trigger('keyboard', 'undo', null);
+        }
+    },
+
+    /**
+     * 重做
+     */
+    redo() {
+        if (this.instance) {
+            this.instance.trigger('keyboard', 'redo', null);
+        }
     }
 };
+
 
 // 导出模块
 if (typeof module !== 'undefined' && module.exports) {

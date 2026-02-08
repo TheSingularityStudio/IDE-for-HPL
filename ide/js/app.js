@@ -183,6 +183,18 @@ const HPLApp = {
                         e.preventDefault();
                         HPLFileManager.saveCurrentFile();
                         break;
+                    case 'f':
+                        e.preventDefault();
+                        HPLEditor.openFind();
+                        break;
+                    case 'h':
+                        e.preventDefault();
+                        HPLEditor.openFindAndReplace();
+                        break;
+                    case 'g':
+                        e.preventDefault();
+                        HPLEditor.openGoToLine();
+                        break;
                     case ',':
                         if (!e.shiftKey) {
                             e.preventDefault();
@@ -201,6 +213,7 @@ const HPLApp = {
             }
         });
     },
+
 
     /**
      * 绑定文件树事件

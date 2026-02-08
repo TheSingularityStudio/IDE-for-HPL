@@ -290,6 +290,10 @@ def execute_hpl_in_subprocess(file_path, timeout=5):
     提供更好的隔离和安全性
     """
     try:
+        # 使用 json.dumps 安全地序列化文件路径，处理 Windows 反斜杠
+        import json
+        safe_file_path = json.dumps(file_path)
+        
         # 创建子进程执行脚本
         script = f'''
 import sys
@@ -298,15 +302,14 @@ import io
 import contextlib
 import json
 
-# 限制资源使用
-
+# 限制资源使用（仅 Unix/Linux）
 try:
     import resource
     # 限制内存使用 (100MB)
     resource.setrlimit(resource.RLIMIT_AS, (100 * 1024 * 1024, 100 * 1024 * 1024))
     # 限制 CPU 时间
     resource.setrlimit(resource.RLIMIT_CPU, ({timeout}, {timeout}))
-except ImportError:
+except (ImportError, AttributeError):
     pass  # Windows 不支持 resource 模块
 
 # 添加 hpl_runtime 到路径
@@ -321,7 +324,8 @@ try:
     output_buffer = io.StringIO()
     
     with contextlib.redirect_stdout(output_buffer):
-        parser = HPLParser(r'{file_path}')
+        # 使用 json.loads 安全地解析文件路径
+        parser = HPLParser({safe_file_path})
         classes, objects, main_func, call_target, imports = parser.parse()
         
         evaluator = HPLEvaluator(classes, objects, main_func, call_target)
@@ -349,6 +353,7 @@ except Exception as e:
     }}))
     sys.exit(1)
 '''
+
         
         # 写入临时脚本文件
         script_path = os.path.join(os.path.dirname(file_path), '_execute_script.py')
