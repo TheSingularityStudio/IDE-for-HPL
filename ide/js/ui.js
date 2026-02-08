@@ -14,6 +14,21 @@ const HPLUI = {
     _outputHistory: [],
 
     /**
+     * 初始化全局辅助函数（用于解决循环依赖问题）
+     */
+    initGlobalHelpers() {
+        // 创建全局跳转函数，避免在字符串模板中直接引用 HPLEditor
+        window.goToLineInEditor = (lineNum) => {
+            if (typeof HPLEditor !== 'undefined' && HPLEditor.goToLine) {
+                HPLEditor.goToLine(lineNum);
+            } else {
+                console.warn('HPLEditor 尚未加载，无法跳转到行', lineNum);
+            }
+        };
+    },
+
+
+    /**
      * 显示加载指示器
      */
     showLoading(message = '加载中...') {
@@ -156,11 +171,16 @@ const HPLUI = {
      * 创建可点击的错误链接
      */
     _createErrorLink(message, lineNum) {
+        // 确保全局辅助函数已初始化
+        if (!window.goToLineInEditor) {
+            this.initGlobalHelpers();
+        }
         return message.replace(
             /第\s*(\d+)\s*行/,
-            `第 <span class="error-link" onclick="HPLEditor.goToLine(${lineNum})" title="点击跳转到第 ${lineNum} 行">${lineNum}</span> 行`
+            `第 <span class="error-link" onclick="goToLineInEditor(${lineNum})" title="点击跳转到第 ${lineNum} 行">${lineNum}</span> 行`
         );
     },
+
 
     /**
      * 设置输出过滤器

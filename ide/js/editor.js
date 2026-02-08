@@ -22,89 +22,92 @@ const HPLEditor = {
 
 
     /**
-     * 代码片段定义
+     * 获取代码片段定义（延迟初始化，确保monaco已加载）
      */
-    snippets: [
-        {
-            label: 'hpl-template',
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: [
-                'includes:',
-                '  - ${1:file.hpl}',
-                '',
-                'imports:',
-                '  - ${2:math}',
-                '',
-                'classes:',
-                '  ${3:MyClass}:',
-                '    ${4:method}: () => {',
-                '      ${5:// code}',
-                '    }',
-                '',
-                'objects:',
-                '  ${6:myObject}: ${3:MyClass}()',
-                '',
-                'main: () => {',
-                '  ${7:// main code}',
-                '}',
-                '',
-                'call: main()'
-            ].join('\n'),
-            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            documentation: '完整的HPL文件模板'
-        },
-        {
-            label: 'class-template',
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: [
-                '${1:ClassName}:',
-                '  ${2:parent}: ${3:BaseClass}',
-                '  ${4:method}: () => {',
-                '    ${5:// method code}',
-                '  }'
-            ].join('\n'),
-            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            documentation: '类定义模板'
-        },
-        {
-            label: 'for-loop',
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: 'for (${1:i} = ${2:0}; ${1:i} < ${3:count}; ${1:i}++) :\n    ${4:// loop body}',
-            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            documentation: 'for循环模板'
-        },
-        {
-            label: 'if-else',
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: [
-                'if (${1:condition}) :',
-                '    ${2:// if body}',
-                'else :',
-                '    ${3:// else body}'
-            ].join('\n'),
-            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            documentation: 'if-else条件语句模板'
-        },
-        {
-            label: 'try-catch',
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: [
-                'try :',
-                '    ${1:// try block}',
-                'catch (${2:error}) :',
-                '    ${3:// catch block}'
-            ].join('\n'),
-            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            documentation: 'try-catch异常处理模板'
-        },
-        {
-            label: 'method',
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: '${1:methodName}: (${2:params}) => {\n    ${3:// method body}\n  }',
-            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            documentation: '方法定义模板'
-        }
-    ],
+    getSnippets() {
+        return [
+            {
+                label: 'hpl-template',
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                insertText: [
+                    'includes:',
+                    '  - ${1:file.hpl}',
+                    '',
+                    'imports:',
+                    '  - ${2:math}',
+                    '',
+                    'classes:',
+                    '  ${3:MyClass}:',
+                    '    ${4:method}: () => {',
+                    '      ${5:// code}',
+                    '    }',
+                    '',
+                    'objects:',
+                    '  ${6:myObject}: ${3:MyClass}()',
+                    '',
+                    'main: () => {',
+                    '  ${7:// main code}',
+                    '}',
+                    '',
+                    'call: main()'
+                ].join('\n'),
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: '完整的HPL文件模板'
+            },
+            {
+                label: 'class-template',
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                insertText: [
+                    '${1:ClassName}:',
+                    '  ${2:parent}: ${3:BaseClass}',
+                    '  ${4:method}: () => {',
+                    '    ${5:// method code}',
+                    '  }'
+                ].join('\n'),
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: '类定义模板'
+            },
+            {
+                label: 'for-loop',
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                insertText: 'for (${1:i} = ${2:0}; ${1:i} < ${3:count}; ${1:i}++) :\n    ${4:// loop body}',
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: 'for循环模板'
+            },
+            {
+                label: 'if-else',
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                insertText: [
+                    'if (${1:condition}) :',
+                    '    ${2:// if body}',
+                    'else :',
+                    '    ${3:// else body}'
+                ].join('\n'),
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: 'if-else条件语句模板'
+            },
+            {
+                label: 'try-catch',
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                insertText: [
+                    'try :',
+                    '    ${1:// try block}',
+                    'catch (${2:error}) :',
+                    '    ${3:// catch block}'
+                ].join('\n'),
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: 'try-catch异常处理模板'
+            },
+            {
+                label: 'method',
+                kind: monaco.languages.CompletionItemKind.Snippet,
+                insertText: '${1:methodName}: (${2:params}) => {\n    ${3:// method body}\n  }',
+                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                documentation: '方法定义模板'
+            }
+        ];
+    },
+
 
     /**
      * 获取当前代码上下文
@@ -275,12 +278,13 @@ const HPLEditor = {
             }
 
             // 始终添加代码片段
-            HPLEditor.snippets.forEach(snippet => {
+            HPLEditor.getSnippets().forEach(snippet => {
                 suggestions.push({
                     ...snippet,
                     range
                 });
             });
+
 
             // 添加通用关键字（如果不在特定上下文中或作为补充）
             const commonKeywords = [
