@@ -195,7 +195,8 @@ const HPLEditor = {
             fontFamily: 'Consolas, "Courier New", monospace',
             lineNumbers: 'on',
             roundedSelection: false,
-            scrollBeyondLastLine: false,
+            scrollBeyondLastLine: true,
+            scrollBeyondLastColumn: 5,
             readOnly: false,
             wordWrap: config.wordWrap || 'on',
             folding: true,
@@ -206,8 +207,10 @@ const HPLEditor = {
             formatOnType: true,
             tabSize: 2,
             insertSpaces: true,
+            padding: { top: 8, bottom: 20 }
         });
     },
+
 
     /**
      * 设置事件监听

@@ -6,6 +6,16 @@
 const HPLUI = {
     // 状态指示器原始文本缓存
     _originalStatusText: '',
+    
+    // 面板状态管理
+    _panelState: {
+        height: 200,        // 当前高度
+        isMaximized: false, // 是否最大化
+        isMinimized: false, // 是否最小化
+        isClosed: false,    // 是否关闭
+        previousHeight: 200 // 恢复时使用的高度
+    },
+
 
     /**
      * 显示加载指示器
@@ -75,7 +85,7 @@ const HPLUI = {
     },
 
     /**
-     * 切换底部面板
+     * 切换底部面板标签
      */
     switchPanel(panelName) {
         document.querySelectorAll('.panel-tab').forEach(tab => {
@@ -91,7 +101,320 @@ const HPLUI = {
         if (problemsPanel) {
             problemsPanel.classList.toggle('hidden', panelName !== 'problems');
         }
+        
+        // 如果面板是关闭状态，先展开它
+        if (this._panelState.isClosed) {
+            this.restorePanel();
+        }
     },
+
+    /**
+     * 初始化面板管理
+     */
+    initPanelManager() {
+        this._initPanelResizer();
+        this._loadPanelState();
+    },
+
+    /**
+     * 触发编辑器重新布局
+     */
+    _triggerEditorLayout() {
+        // 使用 requestAnimationFrame 确保在 DOM 更新后触发
+        requestAnimationFrame(() => {
+            if (HPLEditor.instance) {
+                HPLEditor.instance.layout();
+            }
+        });
+    },
+
+
+    /**
+     * 初始化面板拖拽调整大小功能
+     */
+    _initPanelResizer() {
+        const resizer = document.getElementById('panel-resizer');
+        const bottomPanel = document.getElementById('bottom-panel');
+        
+        if (!resizer || !bottomPanel) return;
+        
+        let isResizing = false;
+        let startY = 0;
+        let startHeight = 0;
+        
+        // 鼠标按下开始拖拽
+        resizer.addEventListener('mousedown', (e) => {
+            if (this._panelState.isMaximized || this._panelState.isMinimized) {
+                return; // 最大化或最小化状态下不允许拖拽
+            }
+            
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = bottomPanel.offsetHeight;
+            
+            resizer.classList.add('resizing');
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none';
+            
+            e.preventDefault();
+        });
+        
+        // 鼠标移动时调整高度
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            
+            const deltaY = startY - e.clientY;
+            const newHeight = Math.max(100, Math.min(600, startHeight + deltaY));
+            
+            bottomPanel.style.height = `${newHeight}px`;
+            this._panelState.height = newHeight;
+            
+            // 如果面板之前是关闭状态，恢复面板样式和状态
+            if (this._panelState.isClosed) {
+                this._panelState.isClosed = false;
+                bottomPanel.style.overflow = '';
+                bottomPanel.style.borderTop = '';
+                this._hideCollapsedIndicator();
+            }
+            
+            // 触发编辑器重新布局
+            this._triggerEditorLayout();
+        });
+
+
+        
+        // 鼠标释放结束拖拽
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                resizer.classList.remove('resizing');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                
+                // 保存状态
+                this._savePanelState();
+                
+                // 确保编辑器布局更新
+                this._triggerEditorLayout();
+            }
+        });
+    },
+
+
+    /**
+     * 最大化面板
+     */
+    maximizePanel() {
+        const bottomPanel = document.getElementById('bottom-panel');
+        const btnMaximize = document.getElementById('btn-panel-maximize');
+        
+        if (!bottomPanel) return;
+        
+        if (this._panelState.isMaximized) {
+            // 如果已经最大化，则恢复
+            this.restorePanel();
+            return;
+        }
+        
+        // 保存当前高度
+        this._panelState.previousHeight = this._panelState.height;
+        
+        // 应用最大化样式
+        bottomPanel.classList.add('maximized');
+        bottomPanel.classList.remove('minimized');
+        bottomPanel.style.height = '';
+        
+        this._panelState.isMaximized = true;
+        this._panelState.isMinimized = false;
+        this._panelState.isClosed = false;
+        
+        // 更新按钮图标
+        if (btnMaximize) {
+            btnMaximize.innerHTML = '⬇️';
+            btnMaximize.title = '恢复面板';
+        }
+        
+        // 隐藏折叠指示器
+        this._hideCollapsedIndicator();
+        
+        this._savePanelState();
+    },
+
+    /**
+     * 最小化面板
+     */
+    minimizePanel() {
+        const bottomPanel = document.getElementById('bottom-panel');
+        const btnMaximize = document.getElementById('btn-panel-maximize');
+        
+        if (!bottomPanel) return;
+        
+        // 保存当前高度（如果不是最大化状态）
+        if (!this._panelState.isMaximized) {
+            this._panelState.previousHeight = this._panelState.height;
+        }
+        
+        // 应用最小化样式
+        bottomPanel.classList.add('minimized');
+        bottomPanel.classList.remove('maximized');
+        bottomPanel.style.height = '';
+        
+        this._panelState.isMinimized = true;
+        this._panelState.isMaximized = false;
+        this._panelState.isClosed = false;
+        
+        // 更新按钮图标
+        if (btnMaximize) {
+            btnMaximize.innerHTML = '⬆️';
+            btnMaximize.title = '恢复面板';
+        }
+        
+        // 显示折叠指示器
+        this._showCollapsedIndicator();
+        
+        this._savePanelState();
+    },
+
+    /**
+     * 关闭面板
+     */
+    closePanel() {
+        const bottomPanel = document.getElementById('bottom-panel');
+        
+        if (!bottomPanel) return;
+        
+        // 保存当前高度
+        if (!this._panelState.isMaximized && !this._panelState.isMinimized) {
+            this._panelState.previousHeight = this._panelState.height;
+        }
+        
+        // 应用关闭样式（完全隐藏）
+        bottomPanel.style.height = '0px';
+        bottomPanel.style.overflow = 'hidden';
+        bottomPanel.style.borderTop = 'none';
+        
+        this._panelState.isClosed = true;
+        this._panelState.isMaximized = false;
+        this._panelState.isMinimized = false;
+        
+        // 显示折叠指示器
+        this._showCollapsedIndicator();
+        
+        this._savePanelState();
+    },
+
+    /**
+     * 恢复面板到正常状态
+     */
+    restorePanel() {
+        const bottomPanel = document.getElementById('bottom-panel');
+        const btnMaximize = document.getElementById('btn-panel-maximize');
+        const resizer = document.getElementById('panel-resizer');
+        
+        if (!bottomPanel) return;
+        
+        // 移除所有特殊状态样式
+        bottomPanel.classList.remove('maximized', 'minimized');
+        bottomPanel.style.overflow = '';
+        bottomPanel.style.borderTop = '';
+        
+        // 恢复高度
+        const restoreHeight = this._panelState.previousHeight || 200;
+        bottomPanel.style.height = `${restoreHeight}px`;
+        this._panelState.height = restoreHeight;
+        
+        this._panelState.isMaximized = false;
+        this._panelState.isMinimized = false;
+        this._panelState.isClosed = false;
+        
+        // 更新按钮图标
+        if (btnMaximize) {
+            btnMaximize.innerHTML = '⬆️';
+            btnMaximize.title = '最大化面板';
+        }
+        
+        // 隐藏折叠指示器
+        this._hideCollapsedIndicator();
+        
+        // 显示调整手柄
+        if (resizer) {
+            resizer.style.display = '';
+        }
+        
+        this._savePanelState();
+    },
+
+    /**
+     * 切换面板显示/隐藏
+     */
+    togglePanel() {
+        if (this._panelState.isClosed || this._panelState.isMinimized) {
+            this.restorePanel();
+        } else {
+            this.minimizePanel();
+        }
+    },
+
+    /**
+     * 显示折叠指示器
+     */
+    _showCollapsedIndicator() {
+        const indicator = document.getElementById('panel-collapsed-indicator');
+        if (indicator) {
+            indicator.classList.remove('hidden');
+        }
+    },
+
+    /**
+     * 隐藏折叠指示器
+     */
+    _hideCollapsedIndicator() {
+        const indicator = document.getElementById('panel-collapsed-indicator');
+        if (indicator) {
+            indicator.classList.add('hidden');
+        }
+    },
+
+    /**
+     * 保存面板状态到 localStorage
+     */
+    _savePanelState() {
+        try {
+            localStorage.setItem('hpl_panel_state', JSON.stringify(this._panelState));
+        } catch (e) {
+            console.warn('无法保存面板状态:', e);
+        }
+    },
+
+    /**
+     * 从 localStorage 加载面板状态
+     */
+    _loadPanelState() {
+        try {
+            const saved = localStorage.getItem('hpl_panel_state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                this._panelState = { ...this._panelState, ...state };
+                
+                // 应用保存的状态
+                const bottomPanel = document.getElementById('bottom-panel');
+                if (bottomPanel) {
+                    if (this._panelState.isMaximized) {
+                        this.maximizePanel();
+                    } else if (this._panelState.isMinimized) {
+                        this.minimizePanel();
+                    } else if (this._panelState.isClosed) {
+                        this.closePanel();
+                    } else {
+                        bottomPanel.style.height = `${this._panelState.height}px`;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('无法加载面板状态:', e);
+        }
+    },
+
 
     /**
      * 显示保存对话框
