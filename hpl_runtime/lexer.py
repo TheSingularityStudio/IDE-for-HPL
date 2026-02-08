@@ -82,10 +82,32 @@ class HPLLexer:
         result = ''
         self.advance()  # 跳过开始引号
         while self.current_char is not None and self.current_char != '"':
-            result += self.current_char
-            self.advance()
+            if self.current_char == '\\':
+                # 处理转义序列
+                self.advance()
+                if self.current_char is None:
+                    raise ValueError(f"Unterminated string escape at line {self.line}, column {self.column}")
+                escape_char = self.current_char
+                if escape_char == 'n':
+                    result += '\n'
+                elif escape_char == 't':
+                    result += '\t'
+                elif escape_char == '\\':
+                    result += '\\'
+                elif escape_char == '"':
+                    result += '"'
+                else:
+                    # 对于未知的转义序列，保留原字符
+                    result += escape_char
+                self.advance()
+            else:
+                result += self.current_char
+                self.advance()
+        if self.current_char is None:
+            raise ValueError(f"Unterminated string at line {self.line}, column {self.column}")
         self.advance()  # 跳过结束引号
         return result
+
 
     def identifier(self):
         result = ''
