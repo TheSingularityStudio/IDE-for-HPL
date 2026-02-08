@@ -102,13 +102,11 @@ call: main()
         
         this.currentMode = mode;
         
-        // 更新面包屑根元素
-        const breadcrumbRoot = document.querySelector('.breadcrumb-root');
-        if (breadcrumbRoot) {
+        // 更新面包屑工作区名称
+        const workspaceName = document.querySelector('.breadcrumb-workspace-name');
+        if (workspaceName) {
             const isWorkspace = mode === 'workspace';
-            breadcrumbRoot.classList.toggle('active', true);
-            breadcrumbRoot.dataset.mode = mode;
-            breadcrumbRoot.innerHTML = isWorkspace ? '💼 工作区' : '📚 示例脚本';
+            workspaceName.innerHTML = isWorkspace ? '💼 工作区' : '📚 示例脚本';
         }
         
         // 更新展开的文件夹
@@ -119,6 +117,7 @@ call: main()
         
         HPLUI.showOutput(`已切换到${mode === 'workspace' ? '工作区' : '示例脚本'}`, 'info');
     },
+
 
 
     /**

@@ -980,17 +980,17 @@ kbd {
 .breadcrumb-nav {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 8px 12px;
     background-color: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
     font-size: 12px;
     overflow-x: auto;
     white-space: nowrap;
-    gap: 4px;
 }
 
-/* 面包屑根元素（可切换工作区/示例脚本） */
-.breadcrumb-root {
+/* 面包屑左侧工作区名称 */
+.breadcrumb-workspace-name {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -998,28 +998,33 @@ kbd {
     background-color: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.2s;
+    color: var(--text-primary);
     font-weight: 500;
     user-select: none;
 }
 
-.breadcrumb-root:hover {
+/* 面包屑右侧切换按钮 */
+.breadcrumb-switch-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 11px;
+    user-select: none;
+}
+
+.breadcrumb-switch-btn:hover {
     background-color: var(--bg-hover);
     color: var(--text-primary);
     border-color: var(--accent-color);
 }
 
-.breadcrumb-root.active {
-    background-color: var(--accent-color);
-    border-color: var(--accent-color);
-    color: white;
-}
-
-.breadcrumb-root.active:hover {
-    background-color: var(--accent-hover);
-}
 
 .breadcrumb-item {
     color: var(--text-secondary);
