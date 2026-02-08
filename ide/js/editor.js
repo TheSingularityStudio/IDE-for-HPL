@@ -100,6 +100,10 @@ const HPLEditor = {
                         this._registerLanguage();
                         this._createEditor();
                         this._setupEventListeners();
+                        
+                        // 初始化语法诊断
+                        this._initDiagnostics();
+                        
                         console.log('Monaco Editor 初始化完成');
                         resolve(this.instance);
                     } catch (error) {
@@ -223,7 +227,7 @@ const HPLEditor = {
 
         // 监听内容变化
         this.instance.onDidChangeModelContent(() => {
-            // 清除错误高亮
+            // 清除执行时的错误高亮（保留诊断标记）
             this.clearErrorHighlights();
             
             // 通知文件管理器内容已变更（仅当不是程序化变更时）
@@ -233,6 +237,18 @@ const HPLEditor = {
         });
     },
 
+    /**
+     * 初始化语法诊断
+     */
+    _initDiagnostics() {
+        // 检查HPLDiagnostics模块是否可用
+        if (typeof HPLDiagnostics !== 'undefined') {
+            HPLDiagnostics.init(this.instance);
+            console.log('语法诊断功能已启用');
+        } else {
+            console.warn('HPLDiagnostics模块未加载，语法诊断功能不可用');
+        }
+    },
 
     /**
      * 获取编辑器值
@@ -251,6 +267,11 @@ const HPLEditor = {
             this.instance.setValue(value);
             // 重置标记
             this.isProgrammaticChange = false;
+            
+            // 清除之前的诊断标记
+            if (typeof HPLDiagnostics !== 'undefined') {
+                HPLDiagnostics.clearDiagnostics();
+            }
         }
     },
 
@@ -283,7 +304,7 @@ const HPLEditor = {
     },
 
     /**
-     * 高亮错误行
+     * 高亮错误行（执行时错误）
      */
     highlightErrorLine(lineNumber, column = 1) {
         if (!this.instance || !lineNumber) return;
@@ -315,7 +336,7 @@ const HPLEditor = {
     },
 
     /**
-     * 清除错误高亮
+     * 清除错误高亮（执行时错误）
      */
     clearErrorHighlights() {
         if (!this.instance || this.errorDecorations.length === 0) return;
@@ -329,6 +350,25 @@ const HPLEditor = {
      */
     getPosition() {
         return this.instance ? this.instance.getPosition() : { lineNumber: 1, column: 1 };
+    },
+    
+    /**
+     * 手动触发语法检查
+     */
+    checkSyntax() {
+        if (typeof HPLDiagnostics !== 'undefined') {
+            HPLDiagnostics.manualCheck();
+        }
+    },
+    
+    /**
+     * 设置自动语法检查
+     * @param {boolean} enabled - 是否启用
+     */
+    setAutoSyntaxCheck(enabled) {
+        if (typeof HPLDiagnostics !== 'undefined') {
+            HPLDiagnostics.setAutoCheck(enabled);
+        }
     }
 };
 

@@ -57,6 +57,9 @@
                 <button type="button" id="btn-run" class="toolbar-btn run-btn" title="运行 (F5)" aria-label="运行程序">
                     <span class="icon">▶️</span> 运行
                 </button>
+                <button type="button" id="btn-check" class="toolbar-btn" title="检查语法 (Ctrl+Shift+C)" aria-label="检查语法">
+                    <span class="icon">🔍</span> 检查
+                </button>
                 <div class="toolbar-separator"></div>
                 <button type="button" id="btn-config" class="toolbar-btn" title="设置 (Ctrl+,)" aria-label="打开设置">
                     <span class="icon">⚙️</span> 设置
@@ -150,6 +153,7 @@
                                     <li>🔄 控制流（if/else、for、while）</li>
                                     <li>📦 标准库模块（math、io、json、os、time）</li>
                                     <li>⚡ 内置函数（echo、len、type 等）</li>
+                                    <li>🔍 实时语法检查</li>
                                 </ul>
                             </div>
 
@@ -160,6 +164,7 @@
                                     <div class="shortcut"><kbd>Ctrl+O</kbd> 打开文件</div>
                                     <div class="shortcut"><kbd>Ctrl+S</kbd> 保存文件</div>
                                     <div class="shortcut"><kbd>F5</kbd> 运行程序</div>
+                                    <div class="shortcut"><kbd>Ctrl+Shift+C</kbd> 检查语法</div>
                                 </div>
                             </div>
                         </div>
@@ -196,7 +201,13 @@
 
                 </div>
                 <div id="problems-panel" class="problems-panel hidden">
-                    <div class="problems-list" id="problems-list"></div>
+                    <div class="problems-header">
+                        <span>语法问题</span>
+                        <button type="button" id="btn-check-syntax" class="icon-btn" title="立即检查语法" aria-label="立即检查语法">🔍 检查</button>
+                    </div>
+                    <div class="problems-content" id="problems-content">
+                        <div class="no-problems">点击"检查"按钮或启用自动检查来验证代码语法</div>
+                    </div>
                 </div>
             </div>
             
@@ -211,7 +222,7 @@
 
 
         <!-- 状态栏 -->
-        <div class="statusbar">
+        <div class="statusbar" id="status-bar">
             <div class="statusbar-left">
                 <span id="file-info">未选择文件</span>
                 <span class="separator">|</span>
@@ -221,6 +232,8 @@
                 <span id="language-mode">HPL</span>
                 <span class="separator">|</span>
                 <span id="encoding">UTF-8</span>
+                <span class="separator">|</span>
+                <span class="syntax-status" id="syntax-status">⏳ 等待检查</span>
             </div>
         </div>
     </div>
@@ -280,6 +293,12 @@
                         <span>启用自动保存</span>
                     </label>
                 </div>
+                <div class="config-item checkbox-item">
+                    <label for="config-auto-check" class="checkbox-label">
+                        <input type="checkbox" id="config-auto-check" checked>
+                        <span>启用自动语法检查</span>
+                    </label>
+                </div>
             </div>
             <div class="dialog-buttons">
                 <button type="button" id="btn-test-connection" class="btn-secondary">测试连接</button>
@@ -294,6 +313,7 @@
     <script src="js/config.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/ui.js"></script>
+    <script src="js/diagnostics.js"></script>
     <script src="js/editor.js"></script>
     <script src="js/api.js"></script>
     <script src="js/fileManager.js"></script>

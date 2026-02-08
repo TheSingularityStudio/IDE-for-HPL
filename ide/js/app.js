@@ -51,6 +51,7 @@ const HPLApp = {
         this.bindKeyboardEvents();
         this.bindFileTreeEvents();
         this.bindWelcomePageEvents();
+        this.bindSyntaxCheckEvents();
     },
 
     /**
@@ -61,6 +62,7 @@ const HPLApp = {
         const btnOpen = document.getElementById('btn-open');
         const btnSave = document.getElementById('btn-save');
         const btnRun = document.getElementById('btn-run');
+        const btnCheck = document.getElementById('btn-check');
         const btnRefresh = document.getElementById('btn-refresh');
         const btnClearOutput = document.getElementById('btn-clear-output');
         const btnConfig = document.getElementById('btn-config');
@@ -70,6 +72,7 @@ const HPLApp = {
         if (btnOpen) btnOpen.addEventListener('click', () => fileInput?.click());
         if (btnSave) btnSave.addEventListener('click', () => HPLFileManager.saveCurrentFile());
         if (btnRun) btnRun.addEventListener('click', () => this.runCode());
+        if (btnCheck) btnCheck.addEventListener('click', () => this.checkSyntax());
         if (btnRefresh) btnRefresh.addEventListener('click', () => this.refreshFileTree());
         if (btnClearOutput) btnClearOutput.addEventListener('click', () => HPLUI.clearOutput());
         if (btnConfig) btnConfig.addEventListener('click', () => this.showConfigDialog());
@@ -153,6 +156,16 @@ const HPLApp = {
         }
     },
 
+    /**
+     * 绑定语法检查事件
+     */
+    bindSyntaxCheckEvents() {
+        // 问题面板中的检查按钮
+        const btnCheckSyntax = document.getElementById('btn-check-syntax');
+        if (btnCheckSyntax) {
+            btnCheckSyntax.addEventListener('click', () => this.checkSyntax());
+        }
+    },
 
     /**
      * 绑定键盘快捷键
@@ -173,6 +186,12 @@ const HPLApp = {
                     case 's':
                         e.preventDefault();
                         HPLFileManager.saveCurrentFile();
+                        break;
+                    case 'C':
+                        if (e.shiftKey) {
+                            e.preventDefault();
+                            this.checkSyntax();
+                        }
                         break;
                     case ',':
                         if (!e.shiftKey) {
@@ -294,6 +313,41 @@ const HPLApp = {
         } finally {
             this.isRunning = false;
             HPLUI.updateRunButtonState(false);
+        }
+    },
+
+    /**
+     * 检查语法
+     */
+    async checkSyntax() {
+        const code = HPLEditor.getValue();
+        if (!code.trim()) {
+            HPLUI.showOutput('没有可检查的代码', 'error');
+            return;
+        }
+        
+        // 切换到问题面板
+        HPLUI.switchPanel('problems');
+        
+        // 更新状态
+        const syntaxStatus = document.getElementById('syntax-status');
+        if (syntaxStatus) {
+            syntaxStatus.textContent = '⏳ 检查中...';
+            syntaxStatus.className = 'syntax-status checking';
+        }
+        
+        try {
+            // 调用编辑器的语法检查
+            HPLEditor.checkSyntax();
+            
+            HPLUI.showOutput('语法检查完成', 'info');
+        } catch (error) {
+            HPLUI.showOutput('语法检查失败: ' + error.message, 'error');
+            
+            if (syntaxStatus) {
+                syntaxStatus.textContent = '❌ 检查失败';
+                syntaxStatus.className = 'syntax-status invalid';
+            }
         }
     },
 
@@ -522,12 +576,14 @@ const HPLApp = {
         const fontSizeInput = document.getElementById('config-font-size');
         const themeInput = document.getElementById('config-theme');
         const autoSaveInput = document.getElementById('config-auto-save');
+        const autoCheckInput = document.getElementById('config-auto-check');
         
         const apiUrl = apiUrlInput?.value?.trim();
         const timeout = parseInt(timeoutInput?.value) || 7000;
         const fontSize = parseInt(fontSizeInput?.value) || 14;
         const theme = themeInput?.value || 'vs-dark';
         const autoSave = autoSaveInput?.checked || false;
+        const autoCheck = autoCheckInput?.checked !== false; // 默认启用
         
         if (!apiUrl) {
             HPLUI.showOutput('错误: API 地址不能为空', 'error');
@@ -547,7 +603,8 @@ const HPLApp = {
                 requestTimeout: timeout,
                 fontSize: fontSize,
                 editorTheme: theme,
-                autoSave: autoSave
+                autoSave: autoSave,
+                autoSyntaxCheck: autoCheck
             });
             
             // 应用字体大小
@@ -555,6 +612,9 @@ const HPLApp = {
             
             // 应用主题
             HPLEditor.setTheme(theme);
+            
+            // 应用自动语法检查设置
+            HPLEditor.setAutoSyntaxCheck(autoCheck);
             
             // 重新初始化自动保存
             HPLFileManager.initAutoSave();
@@ -580,12 +640,17 @@ const HPLApp = {
             const fontSizeInput = document.getElementById('config-font-size');
             const themeInput = document.getElementById('config-theme');
             const autoSaveInput = document.getElementById('config-auto-save');
+            const autoCheckInput = document.getElementById('config-auto-check');
             
             if (apiUrlInput) apiUrlInput.value = config.apiBaseUrl;
             if (timeoutInput) timeoutInput.value = config.requestTimeout;
             if (fontSizeInput) fontSizeInput.value = config.fontSize;
             if (themeInput) themeInput.value = config.editorTheme;
             if (autoSaveInput) autoSaveInput.checked = config.autoSave;
+            if (autoCheckInput) autoCheckInput.checked = config.autoSyntaxCheck !== false;
+            
+            // 应用自动语法检查设置
+            HPLEditor.setAutoSyntaxCheck(config.autoSyntaxCheck !== false);
             
             // 重新初始化自动保存
             HPLFileManager.initAutoSave();

@@ -16,8 +16,11 @@ const HPLConfig = {
         autoSave: false,
         // 自动保存间隔（毫秒）
         autoSaveInterval: 5000,
+        // 是否启用自动语法检查
+        autoSyntaxCheck: true,
         // 编辑器主题
         editorTheme: 'vs-dark',
+
         // 字体大小
         fontSize: 14,
         // 是否显示 minimap
