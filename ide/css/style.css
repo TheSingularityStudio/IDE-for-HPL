@@ -803,6 +803,43 @@ kbd {
     border: 0;
 }
 
+/* 最近文件列表 */
+.recent-files-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.recent-file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 15px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.recent-file-item:hover {
+    background-color: var(--bg-hover);
+    border-color: var(--accent-color);
+    transform: translateX(5px);
+}
+
+.recent-file-icon {
+    font-size: 16px;
+}
+
+.recent-file-name {
+    font-size: 14px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
 

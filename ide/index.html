@@ -78,20 +78,9 @@
                     <button type="button" id="btn-refresh" class="icon-btn" title="刷新文件列表" aria-label="刷新文件列表">🔄</button>
                 </div>
                 <div class="file-tree" id="file-tree">
-
-                    <div class="file-item folder expanded" data-path="examples">
-                        <span class="file-icon">📂</span>
-                        <span class="file-name">examples</span>
-                    </div>
-                    <div class="file-item file" data-path="examples/example.hpl" style="padding-left: 20px;">
-                        <span class="file-icon">📄</span>
-                        <span class="file-name">example.hpl</span>
-                    </div>
-                    <div class="file-item file" data-path="examples/test_builtin_functions.hpl" style="padding-left: 20px;">
-                        <span class="file-icon">📄</span>
-                        <span class="file-name">test_builtin_functions.hpl</span>
-                    </div>
+                    <div class="file-item loading">⏳ 加载中...</div>
                 </div>
+
             </div>
 
 
@@ -131,8 +120,14 @@
                                 </div>
                             </div>
 
+                            <div class="welcome-section" id="recent-files-section" style="display: none;">
+                                <h3>最近文件</h3>
+                                <div class="recent-files-list" id="recent-files-list"></div>
+                            </div>
+
                             <div class="welcome-section">
                                 <h3>关于 HPL</h3>
+
                                 <p>HPL（H Programming Language）是一种基于 YAML 格式的面向对象编程语言，使用动态类型。</p>
                                 <ul class="feature-list">
                                     <li>📝 YAML 格式语法</li>

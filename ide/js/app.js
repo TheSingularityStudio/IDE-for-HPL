@@ -66,12 +66,54 @@ const HPLApp = {
             // 刷新文件树
             this.refreshFileTree();
             
+            // 渲染最近文件
+            this.renderRecentFiles();
+            
             console.log('HPL IDE 初始化完成');
         } catch (error) {
             console.error('HPL IDE 初始化失败:', error);
             HPLUI.showOutput('初始化失败: ' + error.message, 'error');
         }
     },
+
+    /**
+     * 渲染最近文件列表
+     */
+    renderRecentFiles() {
+        const recentFiles = HPLFileManager.getRecentFiles();
+        const section = document.getElementById('recent-files-section');
+        const list = document.getElementById('recent-files-list');
+        
+        if (!section || !list) return;
+        
+        if (recentFiles.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+        
+        // 清空列表
+        list.innerHTML = '';
+        
+        // 添加最近文件
+        recentFiles.forEach(filename => {
+            const item = document.createElement('div');
+            item.className = 'recent-file-item';
+            item.innerHTML = `
+                <span class="recent-file-icon">📄</span>
+                <span class="recent-file-name">${HPLUtils.escapeHtml(filename)}</span>
+            `;
+            item.addEventListener('click', () => {
+                // 尝试从示例加载
+                if (filename.endsWith('.hpl')) {
+                    this.loadExample(filename);
+                }
+            });
+            list.appendChild(item);
+        });
+        
+        section.style.display = 'block';
+    },
+
 
 
     /**

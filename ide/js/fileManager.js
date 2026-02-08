@@ -28,6 +28,13 @@ const HPLFileManager = {
     // 默认文件名
     DEFAULT_FILENAME: 'untitled.hpl',
     
+    // 最近文件存储键
+    RECENT_FILES_KEY: 'hpl-recent-files',
+    
+    // 最大最近文件数
+    MAX_RECENT_FILES: 10,
+
+    
     // 新文件默认内容
     DEFAULT_CONTENT: `classes:
   Main:
@@ -51,6 +58,57 @@ call: main()
     init() {
         this.initAutoSave();
     },
+
+    /**
+     * 获取最近文件列表
+     */
+    getRecentFiles() {
+        try {
+            const stored = localStorage.getItem(this.RECENT_FILES_KEY);
+            return stored ? JSON.parse(stored) : [];
+        } catch (e) {
+            console.error('获取最近文件失败:', e);
+            return [];
+        }
+    },
+
+    /**
+     * 添加文件到最近文件列表
+     */
+    addToRecentFiles(filename) {
+        if (!filename || filename === this.DEFAULT_FILENAME) return;
+        
+        try {
+            let recentFiles = this.getRecentFiles();
+            
+            // 移除已存在的相同文件
+            recentFiles = recentFiles.filter(f => f !== filename);
+            
+            // 添加到开头
+            recentFiles.unshift(filename);
+            
+            // 限制数量
+            if (recentFiles.length > this.MAX_RECENT_FILES) {
+                recentFiles = recentFiles.slice(0, this.MAX_RECENT_FILES);
+            }
+            
+            localStorage.setItem(this.RECENT_FILES_KEY, JSON.stringify(recentFiles));
+        } catch (e) {
+            console.error('添加最近文件失败:', e);
+        }
+    },
+
+    /**
+     * 清空最近文件列表
+     */
+    clearRecentFiles() {
+        try {
+            localStorage.removeItem(this.RECENT_FILES_KEY);
+        } catch (e) {
+            console.error('清空最近文件失败:', e);
+        }
+    },
+
 
     /**
      * 初始化自动保存
@@ -319,7 +377,13 @@ call: main()
         
         // 更新文件信息
         HPLUI.updateFileInfo(filename, isNew);
+        
+        // 添加到最近文件
+        if (!isNew) {
+            this.addToRecentFiles(filename);
+        }
     },
+
 
     /**
      * 创建标签页
