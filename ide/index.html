@@ -74,6 +74,14 @@
                     <span class="icon">⌨️</span>
                 </button>
                 <div class="toolbar-separator"></div>
+                <button type="button" id="btn-next-error" class="toolbar-btn" title="下一个错误 (F8)" aria-label="下一个错误">
+                    <span class="icon">⬇️</span>
+                </button>
+                <button type="button" id="btn-prev-error" class="toolbar-btn" title="上一个错误 (Shift+F8)" aria-label="上一个错误">
+                    <span class="icon">⬆️</span>
+                </button>
+                <div class="toolbar-separator"></div>
+
                 <button type="button" id="btn-config" class="toolbar-btn" title="设置 (Ctrl+,)" aria-label="打开设置">
                     <span class="icon">⚙️</span> 设置
                 </button>
@@ -99,6 +107,17 @@
                 </div>
                 <div class="file-tree" id="file-tree">
                     <div class="file-item loading">⏳ 加载中...</div>
+                </div>
+
+                <!-- 代码大纲视图 -->
+                <div class="outline-panel">
+                    <div class="outline-header">
+                        <span class="outline-title">🗂️ 大纲</span>
+                        <button type="button" id="btn-refresh-outline" class="icon-btn" title="刷新大纲" aria-label="刷新大纲">🔄</button>
+                    </div>
+                    <div class="outline-content" id="outline-content">
+                        <div class="outline-empty">打开文件以查看代码结构</div>
+                    </div>
                 </div>
 
             </div>
@@ -168,6 +187,8 @@
                                     <div class="shortcut"><kbd>Ctrl+H</kbd> 查找替换</div>
                                     <div class="shortcut"><kbd>Ctrl+G</kbd> 跳转到行</div>
                                     <div class="shortcut"><kbd>F5</kbd> 运行程序</div>
+                                    <div class="shortcut"><kbd>F8</kbd> 下一个错误</div>
+                                    <div class="shortcut"><kbd>Shift+F8</kbd> 上一个错误</div>
                                 </div>
                             </div>
 
@@ -212,6 +233,8 @@
                 <span id="file-info">未选择文件</span>
                 <span class="separator">|</span>
                 <span id="cursor-info">行 1, 列 1</span>
+                <span class="separator">|</span>
+                <span id="error-count"></span>
             </div>
             <div class="statusbar-right">
                 <span id="language-mode">HPL</span>
@@ -219,6 +242,7 @@
                 <span id="encoding">UTF-8</span>
             </div>
         </div>
+
     </div>
 
     <!-- 隐藏的文件输入 -->
@@ -309,6 +333,11 @@
                 <div class="shortcuts-category">
                     <h4>运行</h4>
                     <div class="shortcut-item"><kbd>F5</kbd> <span>运行程序</span></div>
+                </div>
+                <div class="shortcuts-category">
+                    <h4>错误导航</h4>
+                    <div class="shortcut-item"><kbd>F8</kbd> <span>下一个错误</span></div>
+                    <div class="shortcut-item"><kbd>Shift+F8</kbd> <span>上一个错误</span></div>
                 </div>
                 <div class="shortcuts-category">
                     <h4>设置</h4>

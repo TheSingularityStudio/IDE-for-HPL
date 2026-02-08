@@ -162,6 +162,16 @@ const HPLApp = {
         if (btnWordWrap) btnWordWrap.addEventListener('click', () => this.toggleWordWrap());
         if (btnShortcuts) btnShortcuts.addEventListener('click', () => this.showShortcutsDialog());
         
+        // 错误导航按钮
+        const btnNextError = document.getElementById('btn-next-error');
+        const btnPrevError = document.getElementById('btn-prev-error');
+        if (btnNextError) btnNextError.addEventListener('click', () => HPLEditor.goToNextError());
+        if (btnPrevError) btnPrevError.addEventListener('click', () => HPLEditor.goToPreviousError());
+        
+        // 大纲刷新按钮
+        const btnRefreshOutline = document.getElementById('btn-refresh-outline');
+        if (btnRefreshOutline) btnRefreshOutline.addEventListener('click', () => HPLEditor.renderOutline());
+        
         // 文件搜索
         const fileSearch = document.getElementById('file-search');
         if (fileSearch) {
@@ -169,8 +179,6 @@ const HPLApp = {
         }
         
         if (fileInput) {
-
-
             fileInput.addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if (file) {
@@ -186,6 +194,7 @@ const HPLApp = {
      * 绑定对话框事件
      */
     bindDialogEvents() {
+
         // 保存对话框
         const btnSaveConfirm = document.getElementById('btn-save-confirm');
         const btnSaveCancel = document.getElementById('btn-save-cancel');
@@ -285,11 +294,19 @@ const HPLApp = {
                         break;
                 }
             } else if (e.key === 'F5') {
-
                 // F5 运行
                 e.preventDefault();
                 this.runCode();
+            } else if (e.key === 'F8') {
+                // F8 下一个错误，Shift+F8 上一个错误
+                e.preventDefault();
+                if (e.shiftKey) {
+                    HPLEditor.goToPreviousError();
+                } else {
+                    HPLEditor.goToNextError();
+                }
             } else if (e.key === 'Escape') {
+
                 // ESC 关闭对话框
                 HPLUI.hideSaveDialog();
                 HPLUI.hideConfigDialog();

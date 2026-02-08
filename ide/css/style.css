@@ -857,6 +857,36 @@ kbd {
     margin-left: 5px;
 }
 
+/* 警告行高亮样式 */
+.warning-line-highlight {
+    background-color: rgba(204, 167, 0, 0.15) !important;
+    border-left: 3px solid #cca700 !important;
+}
+
+.warning-glyph-margin {
+    background-color: #cca700;
+    width: 10px !important;
+    height: 10px !important;
+    border-radius: 50%;
+    margin-left: 5px;
+}
+
+/* 状态栏错误计数样式 */
+#error-count {
+    font-size: 12px;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+#error-count.has-errors {
+    color: var(--error-color);
+}
+
+#error-count.has-warnings {
+    color: var(--warning-color);
+}
+
+
 /* 可点击的错误链接 */
 .error-link {
     color: var(--accent-color);
@@ -974,6 +1004,127 @@ kbd {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* 代码大纲视图 */
+.outline-panel {
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    max-height: 40%;
+    min-height: 150px;
+}
+
+.outline-header {
+    height: 35px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    background-color: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.outline-title {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.outline-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+    background-color: var(--bg-secondary);
+}
+
+.outline-empty {
+    padding: 20px 12px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.outline-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+    border-left: 3px solid transparent;
+}
+
+.outline-item:hover {
+    background-color: var(--bg-hover);
+    border-left-color: var(--accent-color);
+}
+
+.outline-item.active {
+    background-color: var(--accent-color);
+    color: white;
+    border-left-color: var(--accent-hover);
+}
+
+.outline-item .outline-icon {
+    margin-right: 8px;
+    font-size: 14px;
+    width: 16px;
+    text-align: center;
+}
+
+.outline-item .outline-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.outline-item .outline-badge {
+    margin-left: auto;
+    font-size: 10px;
+    padding: 2px 6px;
+    background-color: var(--bg-tertiary);
+    border-radius: 3px;
+    color: var(--text-secondary);
+}
+
+.outline-item.active .outline-badge {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+/* 大纲层级缩进 */
+.outline-item.level-0 {
+    padding-left: 12px;
+    font-weight: bold;
+}
+
+.outline-item.level-1 {
+    padding-left: 24px;
+}
+
+.outline-item.level-2 {
+    padding-left: 36px;
+}
+
+/* 不同类型的图标颜色 */
+.outline-item.type-class .outline-icon {
+    color: #4ec9b0;
+}
+
+.outline-item.type-method .outline-icon {
+    color: #dcdcaa;
+}
+
+.outline-item.type-object .outline-icon {
+    color: #9cdcfe;
+}
+
+.outline-item.type-function .outline-icon {
+    color: #c586c0;
+}
+
 
 /* 响应式 */
 @media (max-width: 768px) {
