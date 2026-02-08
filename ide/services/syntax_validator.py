@@ -141,17 +141,18 @@ class HPLSyntaxValidator:
         valid_keys = {'includes', 'imports', 'classes', 'objects', 'main', 'call'}
         found_keys = {key for _, key in top_level_keys}
         
-        # 检查是否有main但没有call
-        if 'main' in found_keys and 'call' not in found_keys:
+        # 检查call格式（call可以调用任意函数）
+        self._check_call_statement(lines)
+        
+        # 当既没有main也没有call时，给出提示
+        if 'main' not in found_keys and 'call' not in found_keys:
             self.warnings.append(SyntaxErrorInfo(
                 line=1,
                 column=1,
-                message="定义了main但没有call语句，程序不会执行",
-                severity="warning"
+                message="没有定义main函数或call语句，程序不会执行任何操作",
+                severity="info"
             ))
-        
-        # 检查call格式
-        self._check_call_statement(lines)
+
         
         # 检查includes和imports格式
         self._check_includes_section(lines)
@@ -164,18 +165,21 @@ class HPLSyntaxValidator:
         self._check_objects_section(lines)
     
     def _check_call_statement(self, lines: List[str]):
-        """检查call语句格式"""
+        """检查call语句格式（支持调用任意函数）"""
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
             if stripped.startswith('call:') and not stripped.startswith('call: '):
-                if stripped != 'call: main()':
+                # 检查格式是否为 call: functionName() 或 call: functionName(args)
+                call_match = re.match(r'^call:\s*(\w+)\s*\(([^)]*)\)\s*$', stripped)
+                if not call_match:
                     self.errors.append(SyntaxErrorInfo(
                         line=i,
                         column=1,
-                        message="call语句格式错误，应为: call: main()",
+                        message="call语句格式错误，应为: call: functionName() 或 call: functionName(args)",
                         severity="error",
                         code=line
                     ))
+
     
     def _check_includes_section(self, lines: List[str]):
         """检查includes部分"""
