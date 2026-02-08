@@ -405,10 +405,12 @@ const HPLEditor = {
 
     /**
      * 打开查找替换框 (Ctrl+H)
+     * 修复：使用正确的 action ID
      */
     openFindAndReplace() {
         if (this.instance) {
-            this.instance.getAction('editor.action.startFindReplaceAction:').run();
+            // 修复：使用正确的 Monaco Editor action ID
+            this.instance.getAction('editor.action.startFindReplaceAction').run();
         }
     },
 

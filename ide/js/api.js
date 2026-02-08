@@ -60,46 +60,69 @@ const HPLAPI = {
 
     /**
      * 获取示例文件列表
+     * 修复：添加请求超时处理
      */
     async listExamples() {
-        const response = await fetch(HPLConfig.buildApiUrl('/examples'));
+        const { signal, cleanup } = HPLUtils.createTimeoutSignal(5000); // 5秒超时
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        try {
+            const response = await fetch(HPLConfig.buildApiUrl('/examples'), {
+                signal: signal
+            });
+            
+            cleanup();
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || '获取文件列表失败');
+            }
+            
+            return result.examples;
+        } catch (error) {
+            cleanup();
+            throw error;
         }
-        
-        const result = await response.json();
-        
-        if (!result.success) {
-            throw new Error(result.error || '获取文件列表失败');
-        }
-        
-        return result.examples;
     },
 
     /**
      * 加载示例文件内容
+     * 修复：添加请求超时处理
      */
     async loadExample(filename) {
         if (!filename) {
             throw new Error('文件名不能为空');
         }
         
-        const response = await fetch(
-            HPLConfig.buildApiUrl(`/examples/${encodeURIComponent(filename)}`)
-        );
+        const { signal, cleanup } = HPLUtils.createTimeoutSignal(5000); // 5秒超时
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        try {
+            const response = await fetch(
+                HPLConfig.buildApiUrl(`/examples/${encodeURIComponent(filename)}`),
+                { signal: signal }
+            );
+            
+            cleanup();
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || '未知错误');
+            }
+            
+            return result;
+        } catch (error) {
+            cleanup();
+            throw error;
         }
-        
-        const result = await response.json();
-        
-        if (!result.success) {
-            throw new Error(result.error || '未知错误');
-        }
-        
-        return result;
     }
 };
 

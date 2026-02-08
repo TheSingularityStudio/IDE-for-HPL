@@ -7,7 +7,7 @@ const HPLFileManager = {
     // 当前打开的文件
     currentFile: null,
     
-// 打开的文件集合
+    // 打开的文件集合
     openFiles: new Map(),
     
     // 自动保存定时器
@@ -22,7 +22,6 @@ const HPLFileManager = {
         MAX_ENTRIES: 10, // 最多保留 10 个自动保存文件
         MAX_AGE: 7 * 24 * 60 * 60 * 1000 // 7 天最大保留时间
     },
-
 
     
     // 默认文件名
@@ -337,6 +336,7 @@ call: main()
 
     /**
      * 确认保存（从对话框）
+     * 修复：正确处理已存在的文件，避免重复创建条目
      */
     confirmSave(filename) {
         if (!filename || !HPLUtils.isValidFilename(filename)) {
@@ -347,9 +347,27 @@ call: main()
         // 确保文件名有扩展名
         const finalFilename = filename.endsWith('.hpl') ? filename : filename + '.hpl';
         
-        this.openFileInEditor(finalFilename, HPLEditor.getValue(), true);
-        HPLUI.hideSaveDialog();
-        this.saveCurrentFile();
+        // 修复：检查文件是否已打开，如果已打开则更新内容而不是创建新条目
+        if (this.openFiles.has(finalFilename)) {
+            // 文件已存在，更新内容
+            const fileData = this.openFiles.get(finalFilename);
+            fileData.content = HPLEditor.getValue();
+            fileData.isModified = true;
+            this.openFiles.set(finalFilename, fileData);
+            
+            // 更新标签页显示
+            HPLUI.updateTabTitle(finalFilename, true);
+            HPLUI.updateFileInfo(finalFilename, true);
+            
+            // 执行保存
+            HPLUI.hideSaveDialog();
+            this.saveCurrentFile();
+        } else {
+            // 新文件，创建新条目
+            this.openFileInEditor(finalFilename, HPLEditor.getValue(), true);
+            HPLUI.hideSaveDialog();
+            this.saveCurrentFile();
+        }
     },
 
     /**
