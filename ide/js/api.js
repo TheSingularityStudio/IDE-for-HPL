@@ -104,9 +104,12 @@ const HPLAPI = {
 
     /**
      * 获取文件树
+     * @param {string} mode - 'workspace' 或 'examples'
      */
-    async getFileTree() {
-        const response = await fetch(HPLConfig.buildApiUrl('/files/tree'));
+    async getFileTree(mode = 'workspace') {
+        const response = await fetch(
+            HPLConfig.buildApiUrl(`/files/tree?mode=${encodeURIComponent(mode)}`)
+        );
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -121,17 +124,22 @@ const HPLAPI = {
         return result.tree;
     },
 
+
     /**
      * 创建新文件
+     * @param {string} path - 文件路径
+     * @param {string} content - 文件内容
+     * @param {string} mode - 'workspace' 或 'examples'
      */
-    async createFile(path, content = '') {
+    async createFile(path, content = '', mode = 'workspace') {
         const response = await fetch(HPLConfig.buildApiUrl('/files/create'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ path, content })
+            body: JSON.stringify({ path, content, mode })
         });
+
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -148,15 +156,18 @@ const HPLAPI = {
 
     /**
      * 创建新文件夹
+     * @param {string} path - 文件夹路径
+     * @param {string} mode - 'workspace' 或 'examples'
      */
-    async createFolder(path) {
+    async createFolder(path, mode = 'workspace') {
         const response = await fetch(HPLConfig.buildApiUrl('/folders/create'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ path })
+            body: JSON.stringify({ path, mode })
         });
+
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -173,14 +184,17 @@ const HPLAPI = {
 
     /**
      * 重命名文件或文件夹
+     * @param {string} oldPath - 旧路径
+     * @param {string} newPath - 新路径
+     * @param {string} mode - 'workspace' 或 'examples'
      */
-    async renameItem(oldPath, newPath) {
+    async renameItem(oldPath, newPath, mode = 'workspace') {
         const response = await fetch(HPLConfig.buildApiUrl('/files/rename'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ oldPath, newPath })
+            body: JSON.stringify({ oldPath, newPath, mode })
         });
         
         if (!response.ok) {
@@ -196,16 +210,19 @@ const HPLAPI = {
         return result;
     },
 
+
     /**
      * 删除文件或文件夹
+     * @param {string} path - 文件或文件夹路径
+     * @param {string} mode - 'workspace' 或 'examples'
      */
-    async deleteItem(path) {
+    async deleteItem(path, mode = 'workspace') {
         const response = await fetch(HPLConfig.buildApiUrl('/files/delete'), {
             method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ path })
+            body: JSON.stringify({ path, mode })
         });
         
         if (!response.ok) {
@@ -220,6 +237,7 @@ const HPLAPI = {
         
         return result;
     }
+
 };
 
 

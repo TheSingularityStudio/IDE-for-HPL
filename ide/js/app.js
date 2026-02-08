@@ -275,48 +275,33 @@ const HPLApp = {
         fileTree.innerHTML = '<div class="file-item loading">⏳ 加载中...</div>';
         
         try {
-            // 使用新的文件树 API
-            const treeData = await HPLAPI.getFileTree();
+            // 获取当前模式并请求对应的文件树
+            const mode = HPLFileManager.currentMode || 'workspace';
+            const treeData = await HPLAPI.getFileTree(mode);
             
             // 设置文件树数据并渲染
             HPLFileManager.setFileTreeData(treeData);
             
             // 更新面包屑导航
-            this.updateBreadcrumb(treeData);
+            this.updateBreadcrumb(treeData, mode);
             
-            console.log('文件树已刷新');
+            console.log('文件树已刷新:', mode);
             HPLUI.hideLoading();
         } catch (error) {
             console.error('刷新文件树失败:', error);
-            // 如果新 API 失败，回退到旧 API
-            try {
-                const examples = await HPLAPI.listExamples();
-                const treeData = {
-                    name: 'examples',
-                    path: 'examples',
-                    type: 'folder',
-                    children: examples.map(ex => ({
-                        name: ex.name,
-                        path: `examples/${ex.name}`,
-                        type: 'file',
-                        size: ex.size
-                    }))
-                };
-                HPLFileManager.setFileTreeData(treeData);
-                this.updateBreadcrumb(treeData);
-                HPLUI.hideLoading();
-            } catch (fallbackError) {
-                fileTree.innerHTML = `<div class="file-item error">❌ 加载失败: ${HPLUtils.escapeHtml(error.message)}</div>`;
-                HPLUI.showOutput('刷新文件树失败: ' + error.message, 'error');
-                HPLUI.hideLoading();
-            }
+            fileTree.innerHTML = `<div class="file-item error">❌ 加载失败: ${HPLUtils.escapeHtml(error.message)}</div>`;
+            HPLUI.showOutput('刷新文件树失败: ' + error.message, 'error');
+            HPLUI.hideLoading();
         }
     },
 
+
     /**
      * 更新面包屑导航
+     * @param {Object} treeData - 文件树数据
+     * @param {string} mode - 当前模式：'workspace' 或 'examples'
      */
-    updateBreadcrumb(treeData) {
+    updateBreadcrumb(treeData, mode) {
         let breadcrumb = document.getElementById('breadcrumb-nav');
         if (!breadcrumb) {
             // 创建面包屑容器
@@ -333,12 +318,15 @@ const HPLApp = {
             }
         }
         
+        // 根据模式确定根目录显示名称
+        const rootName = mode === 'examples' ? '示例脚本' : '工作区';
+        
         // 构建面包屑路径
         let pathParts = treeData.path.split('/');
         
-        // 处理根目录显示：将 "." 或空路径显示为 "工作区"
-        if (pathParts.length === 1 && (pathParts[0] === '.' || pathParts[0] === '')) {
-            pathParts = ['工作区'];
+        // 处理根目录显示：将 "." 或空路径或根目录名显示为对应模式名称
+        if (pathParts.length === 1 && (pathParts[0] === '.' || pathParts[0] === '' || pathParts[0] === mode)) {
+            pathParts = [rootName];
         }
         
         let currentPath = '';
@@ -348,7 +336,7 @@ const HPLApp = {
             const isLast = index === pathParts.length - 1;
             
             // 对于根目录，使用原始路径 "."
-            const navPath = part === '工作区' ? '.' : currentPath;
+            const navPath = (part === rootName) ? '.' : currentPath;
             
             return `
                 ${index > 0 ? '<span class="breadcrumb-separator">/</span>' : ''}
@@ -360,6 +348,7 @@ const HPLApp = {
             `;
         }).join('');
     },
+
 
 
     /**

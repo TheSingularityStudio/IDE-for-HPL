@@ -11,8 +11,9 @@ from flask import Flask, request, jsonify
 
 from config import (
     MAX_REQUEST_SIZE, MAX_EXECUTION_TIME, 
-    ALLOWED_EXAMPLES_DIR, SERVER_VERSION
+    ALLOWED_WORKSPACE_DIR, ALLOWED_EXAMPLES_DIR, SERVER_VERSION
 )
+
 from utils.helpers import execute_with_timeout, TimeoutException
 from services.security import limit_request_size, validate_path, is_safe_filename
 from services.code_processor import clean_code, copy_include_files
@@ -186,12 +187,23 @@ def register_api_routes(app: Flask):
                 'error': str(e)
             })
 
+    def get_base_path(mode):
+        """
+        根据模式获取基础路径
+        """
+        if mode == 'workspace':
+            return ALLOWED_WORKSPACE_DIR
+        return ALLOWED_EXAMPLES_DIR
+
     @app.route('/api/files/tree', methods=['GET'])
     def get_file_tree():
         """
         获取文件树结构
-        递归扫描 examples 目录
+        递归扫描 workspace 或 examples 目录
         """
+        mode = request.args.get('mode', 'workspace')
+        base_path = get_base_path(mode)
+        
         def build_tree(path, base_path):
             """
             递归构建文件树
@@ -236,13 +248,13 @@ def register_api_routes(app: Flask):
                 return None
         
         try:
-            if not os.path.exists(ALLOWED_EXAMPLES_DIR):
+            if not os.path.exists(base_path):
                 return jsonify({
                     'success': False,
-                    'error': '示例目录不存在'
+                    'error': f'{"工作区" if mode == "workspace" else "示例"}目录不存在'
                 })
             
-            tree = build_tree(ALLOWED_EXAMPLES_DIR, ALLOWED_EXAMPLES_DIR)
+            tree = build_tree(base_path, base_path)
             
             return jsonify({
                 'success': True,
@@ -270,6 +282,7 @@ def register_api_routes(app: Flask):
             
             path = data.get('path', '')
             content = data.get('content', '')
+            mode = data.get('mode', 'workspace')
             
             if not path:
                 return jsonify({
@@ -284,9 +297,12 @@ def register_api_routes(app: Flask):
                     'error': '无效的文件名'
                 })
             
+            # 根据模式选择基础路径
+            base_path = get_base_path(mode)
+            
             # 构建完整路径并验证
-            full_path = os.path.join(ALLOWED_EXAMPLES_DIR, path)
-            validated_path = validate_path(full_path, ALLOWED_EXAMPLES_DIR)
+            full_path = os.path.join(base_path, path)
+            validated_path = validate_path(full_path, base_path)
             
             if not validated_path:
                 return jsonify({
@@ -338,6 +354,7 @@ def register_api_routes(app: Flask):
                 })
             
             path = data.get('path', '')
+            mode = data.get('mode', 'workspace')
             
             if not path:
                 return jsonify({
@@ -352,9 +369,12 @@ def register_api_routes(app: Flask):
                     'error': '无效的文件夹名'
                 })
             
+            # 根据模式选择基础路径
+            base_path = get_base_path(mode)
+            
             # 构建完整路径并验证
-            full_path = os.path.join(ALLOWED_EXAMPLES_DIR, path)
-            validated_path = validate_path(full_path, ALLOWED_EXAMPLES_DIR)
+            full_path = os.path.join(base_path, path)
+            validated_path = validate_path(full_path, base_path)
             
             if not validated_path:
                 return jsonify({
@@ -401,6 +421,7 @@ def register_api_routes(app: Flask):
             
             old_path = data.get('oldPath', '')
             new_path = data.get('newPath', '')
+            mode = data.get('mode', 'workspace')
             
             if not old_path or not new_path:
                 return jsonify({
@@ -415,12 +436,15 @@ def register_api_routes(app: Flask):
                     'error': '无效的新名称'
                 })
             
-            # 构建完整路径并验证
-            full_old_path = os.path.join(ALLOWED_EXAMPLES_DIR, old_path)
-            full_new_path = os.path.join(ALLOWED_EXAMPLES_DIR, new_path)
+            # 根据模式选择基础路径
+            base_path = get_base_path(mode)
             
-            validated_old_path = validate_path(full_old_path, ALLOWED_EXAMPLES_DIR)
-            validated_new_path = validate_path(full_new_path, ALLOWED_EXAMPLES_DIR)
+            # 构建完整路径并验证
+            full_old_path = os.path.join(base_path, old_path)
+            full_new_path = os.path.join(base_path, new_path)
+            
+            validated_old_path = validate_path(full_old_path, base_path)
+            validated_new_path = validate_path(full_new_path, base_path)
             
             if not validated_old_path:
                 return jsonify({
@@ -480,6 +504,7 @@ def register_api_routes(app: Flask):
                 })
             
             path = data.get('path', '')
+            mode = data.get('mode', 'workspace')
             
             if not path:
                 return jsonify({
@@ -494,9 +519,12 @@ def register_api_routes(app: Flask):
                     'error': '无效的名称'
                 })
             
+            # 根据模式选择基础路径
+            base_path = get_base_path(mode)
+            
             # 构建完整路径并验证
-            full_path = os.path.join(ALLOWED_EXAMPLES_DIR, path)
-            validated_path = validate_path(full_path, ALLOWED_EXAMPLES_DIR)
+            full_path = os.path.join(base_path, path)
+            validated_path = validate_path(full_path, base_path)
             
             if not validated_path:
                 return jsonify({
