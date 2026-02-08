@@ -302,52 +302,56 @@ const HPLApp = {
      * @param {string} mode - 当前模式：'workspace' 或 'examples'
      */
     updateBreadcrumb(treeData, mode) {
-        let breadcrumb = document.getElementById('breadcrumb-nav');
-        if (!breadcrumb) {
-            // 创建面包屑容器
-            const sidebar = document.getElementById('sidebar');
-            if (!sidebar) return;
-            
-            breadcrumb = document.createElement('div');
-            breadcrumb.id = 'breadcrumb-nav';
-            breadcrumb.className = 'breadcrumb-nav';
-            
-            const fileTree = document.getElementById('file-tree');
-            if (fileTree) {
-                sidebar.insertBefore(breadcrumb, fileTree);
-            }
+        const breadcrumb = document.getElementById('breadcrumb-nav');
+        if (!breadcrumb) return;
+        
+        // 更新根元素（工作区/示例脚本切换按钮）
+        const rootName = mode === 'examples' ? '📚 示例脚本' : '💼 工作区';
+        const rootElement = breadcrumb.querySelector('.breadcrumb-root');
+        if (rootElement) {
+            rootElement.innerHTML = rootName;
+            rootElement.dataset.mode = mode;
+            rootElement.classList.add('active');
         }
         
-        // 根据模式确定根目录显示名称
-        const rootName = mode === 'examples' ? '示例脚本' : '工作区';
+        // 构建面包屑路径（从根目录之后开始）
+        let pathParts = treeData.path.split('/').filter(p => p && p !== '.' && p !== mode);
         
-        // 构建面包屑路径
-        let pathParts = treeData.path.split('/');
-        
-        // 处理根目录显示：将 "." 或空路径或根目录名显示为对应模式名称
-        if (pathParts.length === 1 && (pathParts[0] === '.' || pathParts[0] === '' || pathParts[0] === mode)) {
-            pathParts = [rootName];
+        // 如果没有子路径，只显示根元素
+        if (pathParts.length === 0) {
+            // 清除旧的面包屑项（保留根元素）
+            const oldItems = breadcrumb.querySelectorAll('.breadcrumb-separator, .breadcrumb-item:not(.breadcrumb-root)');
+            oldItems.forEach(item => item.remove());
+            return;
         }
         
         let currentPath = '';
+        let breadcrumbHTML = '';
         
-        breadcrumb.innerHTML = pathParts.map((part, index) => {
+        pathParts.forEach((part, index) => {
             currentPath += (index === 0 ? '' : '/') + part;
             const isLast = index === pathParts.length - 1;
             
-            // 对于根目录，使用原始路径 "."
-            const navPath = (part === rootName) ? '.' : currentPath;
-            
-            return `
-                ${index > 0 ? '<span class="breadcrumb-separator">/</span>' : ''}
+            breadcrumbHTML += `
+                <span class="breadcrumb-separator">/</span>
                 <span class="breadcrumb-item ${isLast ? 'active' : ''}" 
-                      data-path="${navPath}"
-                      onclick="HPLApp.navigateToFolder('${navPath}')">
+                      data-path="${currentPath}"
+                      onclick="HPLApp.navigateToFolder('${currentPath}')">
                     ${HPLUtils.escapeHtml(part)}
                 </span>
             `;
-        }).join('');
+        });
+        
+        // 清除旧的面包屑项（保留根元素）
+        const oldItems = breadcrumb.querySelectorAll('.breadcrumb-separator, .breadcrumb-item:not(.breadcrumb-root)');
+        oldItems.forEach(item => item.remove());
+        
+        // 添加新的面包屑项
+        if (breadcrumbHTML) {
+            rootElement.insertAdjacentHTML('afterend', breadcrumbHTML);
+        }
     },
+
 
 
 

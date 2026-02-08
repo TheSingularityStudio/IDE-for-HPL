@@ -155,45 +155,7 @@ body {
     text-transform: uppercase;
 }
 
-/* 工作区/示例脚本切换按钮 */
-.workspace-toggle {
-    display: flex;
-    padding: 8px 12px;
-    gap: 8px;
-    background-color: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-color);
-}
 
-.toggle-btn {
-    flex: 1;
-    padding: 6px 12px;
-    background-color: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    color: var(--text-secondary);
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-}
-
-.toggle-btn:hover {
-    background-color: var(--bg-hover);
-    color: var(--text-primary);
-}
-
-.toggle-btn.active {
-    background-color: var(--accent-color);
-    border-color: var(--accent-color);
-    color: white;
-}
-
-.toggle-btn.active:hover {
-    background-color: var(--accent-hover);
-}
 
 
 .icon-btn {
@@ -1014,16 +976,49 @@ kbd {
     border-bottom: 1px solid var(--border-color);
 }
 
-/* 面包屑导航 */
+/* 面包屑导航（包含工作区/示例脚本切换） */
 .breadcrumb-nav {
     display: flex;
     align-items: center;
     padding: 8px 12px;
-    background-color: var(--bg-tertiary);
+    background-color: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
     font-size: 12px;
     overflow-x: auto;
     white-space: nowrap;
+    gap: 4px;
+}
+
+/* 面包屑根元素（可切换工作区/示例脚本） */
+.breadcrumb-root {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+    user-select: none;
+}
+
+.breadcrumb-root:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+    border-color: var(--accent-color);
+}
+
+.breadcrumb-root.active {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+}
+
+.breadcrumb-root.active:hover {
+    background-color: var(--accent-hover);
 }
 
 .breadcrumb-item {
@@ -1048,6 +1043,7 @@ kbd {
     color: var(--accent-color);
     font-weight: 500;
 }
+
 
 
 /* 响应式 */

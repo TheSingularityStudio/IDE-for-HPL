@@ -78,21 +78,21 @@ call: main()
 
     /**
      * 初始化工作区/示例脚本切换功能
+     * 现在通过面包屑导航的根元素切换
      */
     initWorkspaceToggle() {
-        const btnWorkspace = document.getElementById('btn-workspace');
-        const btnExamples = document.getElementById('btn-examples');
-        
-        if (!btnWorkspace || !btnExamples) return;
-        
-        btnWorkspace.addEventListener('click', () => {
-            this.switchMode('workspace');
-        });
-        
-        btnExamples.addEventListener('click', () => {
-            this.switchMode('examples');
-        });
+        // 面包屑根元素点击事件在 HTML 中通过 onclick 绑定到 toggleMode()
+        // 这里可以添加额外的初始化逻辑（如悬停提示等）
     },
+
+    /**
+     * 切换工作区/示例脚本模式（在两者之间切换）
+     */
+    toggleMode() {
+        const newMode = this.currentMode === 'workspace' ? 'examples' : 'workspace';
+        this.switchMode(newMode);
+    },
+
 
     /**
      * 切换工作区/示例脚本模式
@@ -102,13 +102,13 @@ call: main()
         
         this.currentMode = mode;
         
-        // 更新按钮状态
-        const btnWorkspace = document.getElementById('btn-workspace');
-        const btnExamples = document.getElementById('btn-examples');
-        
-        if (btnWorkspace && btnExamples) {
-            btnWorkspace.classList.toggle('active', mode === 'workspace');
-            btnExamples.classList.toggle('active', mode === 'examples');
+        // 更新面包屑根元素
+        const breadcrumbRoot = document.querySelector('.breadcrumb-root');
+        if (breadcrumbRoot) {
+            const isWorkspace = mode === 'workspace';
+            breadcrumbRoot.classList.toggle('active', true);
+            breadcrumbRoot.dataset.mode = mode;
+            breadcrumbRoot.innerHTML = isWorkspace ? '💼 工作区' : '📚 示例脚本';
         }
         
         // 更新展开的文件夹
@@ -119,6 +119,7 @@ call: main()
         
         HPLUI.showOutput(`已切换到${mode === 'workspace' ? '工作区' : '示例脚本'}`, 'info');
     },
+
 
     /**
      * 获取当前模式的根目录
