@@ -25,8 +25,23 @@ const HPLFileManager = {
     // 上下文菜单元素
     contextMenu: null,
     
+    // 拖拽状态
+    dragState: {
+        isDragging: false,
+        draggedItem: null,
+        dropTarget: null
+    },
+    
+    // 搜索状态
+    searchState: {
+        query: '',
+        results: [],
+        currentIndex: -1
+    },
+    
     // 默认文件名
     DEFAULT_FILENAME: 'untitled.hpl',
+
     
     // 新文件默认内容
     DEFAULT_CONTENT: `classes:
@@ -126,7 +141,168 @@ call: main()
                 this.showContextMenu(e.clientX, e.clientY, item);
             }
         });
+        
+        // 拖拽事件
+        this.initDragAndDrop(fileTree);
+        
+        // 文件上传输入
+        this.initFileUpload();
     },
+
+    /**
+     * 初始化拖拽功能
+     */
+    initDragAndDrop(fileTree) {
+        // 拖拽开始
+        fileTree.addEventListener('dragstart', (e) => {
+            const item = e.target.closest('.file-item');
+            if (!item) return;
+            
+            // 只允许文件拖拽
+            if (item.classList.contains('folder')) return;
+            
+            this.dragState.isDragging = true;
+            this.dragState.draggedItem = item;
+            item.classList.add('dragging');
+            
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', item.dataset.path);
+        });
+        
+        // 拖拽经过
+        fileTree.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const item = e.target.closest('.file-item');
+            
+            if (item && item.classList.contains('folder')) {
+                item.classList.add('drag-over');
+                this.dragState.dropTarget = item;
+            }
+        });
+        
+        // 拖拽离开
+        fileTree.addEventListener('dragleave', (e) => {
+            const item = e.target.closest('.file-item');
+            if (item) {
+                item.classList.remove('drag-over');
+            }
+        });
+        
+        // 放置
+        fileTree.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const item = e.target.closest('.file-item');
+            
+            // 清理拖拽状态
+            document.querySelectorAll('.file-item').forEach(el => {
+                el.classList.remove('dragging', 'drag-over');
+            });
+            
+            if (!item || !item.classList.contains('folder')) return;
+            
+            const sourcePath = e.dataTransfer.getData('text/plain');
+            const targetPath = item.dataset.path;
+            
+            if (sourcePath && targetPath && sourcePath !== targetPath) {
+                await this.moveItem(sourcePath, targetPath);
+            }
+            
+            this.dragState.isDragging = false;
+            this.dragState.draggedItem = null;
+            this.dragState.dropTarget = null;
+        });
+        
+        // 拖拽结束
+        fileTree.addEventListener('dragend', () => {
+            document.querySelectorAll('.file-item').forEach(el => {
+                el.classList.remove('dragging', 'drag-over');
+            });
+            this.dragState.isDragging = false;
+            this.dragState.draggedItem = null;
+        });
+    },
+
+    /**
+     * 初始化文件上传
+     */
+    initFileUpload() {
+        // 创建隐藏的文件上传输入
+        const uploadInput = document.createElement('input');
+        uploadInput.type = 'file';
+        uploadInput.id = 'file-upload-input';
+        uploadInput.className = 'visually-hidden';
+        uploadInput.multiple = true;
+        document.body.appendChild(uploadInput);
+        
+        // 添加上传菜单项到上下文菜单
+        const uploadMenuItem = document.createElement('div');
+        uploadMenuItem.className = 'context-menu-item';
+        uploadMenuItem.dataset.action = 'upload';
+        uploadMenuItem.innerHTML = '📤 上传文件';
+        this.contextMenu.insertBefore(uploadMenuItem, this.contextMenu.firstChild);
+        
+        // 处理文件选择
+        uploadInput.addEventListener('change', async (e) => {
+            const files = e.target.files;
+            if (!files.length) return;
+            
+            const targetPath = uploadInput.dataset.targetPath || 'examples';
+            
+            for (const file of files) {
+                try {
+                    const content = await this.readFileContent(file);
+                    const fullPath = `${targetPath}/${file.name}`;
+                    await HPLAPI.createFile(fullPath, content);
+                    HPLUI.showOutput(`✅ 已上传: ${file.name}`, 'success');
+                } catch (error) {
+                    HPLUI.showOutput(`上传失败 ${file.name}: ${error.message}`, 'error');
+                }
+            }
+            
+            HPLApp.refreshFileTree();
+            uploadInput.value = '';
+        });
+    },
+
+    /**
+     * 读取文件内容
+     */
+    readFileContent(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = (e) => reject(new Error('读取文件失败'));
+            reader.readAsText(file);
+        });
+    },
+
+    /**
+     * 移动文件到文件夹
+     */
+    async moveItem(sourcePath, targetFolder) {
+        const filename = sourcePath.split('/').pop();
+        const newPath = `${targetFolder}/${filename}`;
+        
+        try {
+            await HPLAPI.renameItem(sourcePath, newPath);
+            HPLUI.showOutput(`✅ 已移动到: ${targetFolder}`, 'success');
+            HPLApp.refreshFileTree();
+        } catch (error) {
+            HPLUI.showOutput('移动失败: ' + error.message, 'error');
+        }
+    },
+
+    /**
+     * 处理上传操作
+     */
+    handleUpload(targetPath) {
+        const uploadInput = document.getElementById('file-upload-input');
+        if (uploadInput) {
+            uploadInput.dataset.targetPath = targetPath;
+            uploadInput.click();
+        }
+    },
+
 
     /**
      * 选中文件树项
@@ -199,6 +375,9 @@ call: main()
         const isFolder = this.selectedTreeItem.classList.contains('folder');
         
         switch (action) {
+            case 'upload':
+                if (isFolder) this.handleUpload(path);
+                break;
             case 'new-file':
                 if (isFolder) this.createNewFile(path);
                 break;
@@ -216,6 +395,75 @@ call: main()
                 break;
         }
     },
+
+    /**
+     * 搜索文件
+     */
+    searchFiles(query) {
+        if (!query) {
+            this.searchState.results = [];
+            this.searchState.currentIndex = -1;
+            this.renderFileTree();
+            return;
+        }
+        
+        this.searchState.query = query.toLowerCase();
+        this.searchState.results = [];
+        
+        const searchInTree = (node) => {
+            if (node.name.toLowerCase().includes(this.searchState.query)) {
+                this.searchState.results.push(node.path);
+            }
+            
+            if (node.children) {
+                node.children.forEach(child => searchInTree(child));
+            }
+        };
+        
+        if (this.fileTreeData) {
+            searchInTree(this.fileTreeData);
+        }
+        
+        // 高亮搜索结果
+        this.highlightSearchResults();
+        
+        return this.searchState.results;
+    },
+
+    /**
+     * 高亮搜索结果
+     */
+    highlightSearchResults() {
+        document.querySelectorAll('.file-item').forEach(item => {
+            const path = item.dataset.path;
+            const name = item.querySelector('.file-name');
+            
+            if (this.searchState.results.includes(path)) {
+                item.classList.add('search-match');
+                // 展开包含搜索结果的文件夹
+                const parentFolder = item.closest('.file-item.folder');
+                if (parentFolder) {
+                    const parentPath = parentFolder.dataset.path;
+                    this.expandedFolders.add(parentPath);
+                }
+            } else {
+                item.classList.remove('search-match');
+            }
+        });
+    },
+
+    /**
+     * 清除搜索
+     */
+    clearSearch() {
+        this.searchState.query = '';
+        this.searchState.results = [];
+        this.searchState.currentIndex = -1;
+        document.querySelectorAll('.file-item').forEach(item => {
+            item.classList.remove('search-match');
+        });
+    },
+
 
     /**
      * 创建新文件
@@ -322,8 +570,35 @@ call: main()
         if (!fileTree || !data) return;
         
         fileTree.innerHTML = '';
+        
+        // 检查是否为空
+        if (!data.children || data.children.length === 0) {
+            this.renderEmptyState(fileTree);
+            return;
+        }
+        
         this.renderTreeNode(fileTree, data, 0);
+        
+        // 如果有搜索结果，高亮它们
+        if (this.searchState.results.length > 0) {
+            this.highlightSearchResults();
+        }
     },
+
+    /**
+     * 渲染空状态
+     */
+    renderEmptyState(container) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'file-tree-empty';
+        emptyDiv.innerHTML = `
+            <div class="empty-icon">📂</div>
+            <div class="empty-text">文件夹为空</div>
+            <div class="empty-hint">右键点击创建新文件或文件夹</div>
+        `;
+        container.appendChild(emptyDiv);
+    },
+
 
     /**
      * 递归渲染树节点
@@ -348,16 +623,28 @@ call: main()
             
             item.innerHTML = `
                 <span class="file-icon folder-icon">${icon}</span>
-                <span class="file-name">${HPLUtils.escapeHtml(node.name)}</span>
+                <span class="file-name" title="${HPLUtils.escapeHtml(node.path)}">${HPLUtils.escapeHtml(node.name)}</span>
             `;
+            
+            // 添加拖拽属性
+            item.draggable = false;
             
             container.appendChild(item);
             
             // 递归渲染子项
             if (isExpanded && node.children) {
-                node.children.forEach(child => {
-                    this.renderTreeNode(container, child, level + 1);
-                });
+                if (node.children.length === 0) {
+                    // 空文件夹提示
+                    const emptyHint = document.createElement('div');
+                    emptyHint.className = 'file-item empty-hint';
+                    emptyHint.style.paddingLeft = `${12 + (level + 1) * 16}px`;
+                    emptyHint.innerHTML = '<span class="file-name" style="color: var(--text-secondary); font-style: italic;">(空文件夹)</span>';
+                    container.appendChild(emptyHint);
+                } else {
+                    node.children.forEach(child => {
+                        this.renderTreeNode(container, child, level + 1);
+                    });
+                }
             }
         } else {
             item.classList.add('file');
@@ -371,13 +658,23 @@ call: main()
                 'txt': '📃',
                 'json': '📋',
                 'yaml': '⚙️',
-                'yml': '⚙️'
+                'yml': '⚙️',
+                'js': '📜',
+                'css': '🎨',
+                'html': '🌐',
+                'xml': '📰',
+                'csv': '📊',
+                'jpg': '🖼️',
+                'jpeg': '🖼️',
+                'png': '🖼️',
+                'gif': '🖼️',
+                'svg': '🎭'
             };
             const icon = iconMap[ext] || '📄';
             
             item.innerHTML = `
                 <span class="file-icon">${icon}</span>
-                <span class="file-name">${HPLUtils.escapeHtml(node.name)}</span>
+                <span class="file-name" title="${HPLUtils.escapeHtml(node.path)}">${HPLUtils.escapeHtml(node.name)}</span>
             `;
             
             // 高亮当前打开的文件
@@ -385,8 +682,12 @@ call: main()
                 item.classList.add('active');
             }
             
+            // 添加拖拽属性
+            item.draggable = true;
+            
             container.appendChild(item);
         }
+
     },
 
     /**

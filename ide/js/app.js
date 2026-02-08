@@ -20,6 +20,9 @@ const HPLApp = {
             // 初始化文件管理器
             HPLFileManager.init();
             
+            // 初始化文件搜索
+            this.initFileSearch();
+            
             // 绑定事件
             this.bindEvents();
             
@@ -32,6 +35,7 @@ const HPLApp = {
             HPLUI.showOutput('初始化失败: ' + error.message, 'error');
         }
     },
+
 
     /**
      * 绑定所有事件
@@ -277,6 +281,9 @@ const HPLApp = {
             // 设置文件树数据并渲染
             HPLFileManager.setFileTreeData(treeData);
             
+            // 更新面包屑导航
+            this.updateBreadcrumb(treeData);
+            
             console.log('文件树已刷新');
             HPLUI.hideLoading();
         } catch (error) {
@@ -296,6 +303,7 @@ const HPLApp = {
                     }))
                 };
                 HPLFileManager.setFileTreeData(treeData);
+                this.updateBreadcrumb(treeData);
                 HPLUI.hideLoading();
             } catch (fallbackError) {
                 fileTree.innerHTML = `<div class="file-item error">❌ 加载失败: ${HPLUtils.escapeHtml(error.message)}</div>`;
@@ -304,6 +312,151 @@ const HPLApp = {
             }
         }
     },
+
+    /**
+     * 更新面包屑导航
+     */
+    updateBreadcrumb(treeData) {
+        let breadcrumb = document.getElementById('breadcrumb-nav');
+        if (!breadcrumb) {
+            // 创建面包屑容器
+            const sidebar = document.getElementById('sidebar');
+            if (!sidebar) return;
+            
+            breadcrumb = document.createElement('div');
+            breadcrumb.id = 'breadcrumb-nav';
+            breadcrumb.className = 'breadcrumb-nav';
+            
+            const fileTree = document.getElementById('file-tree');
+            if (fileTree) {
+                sidebar.insertBefore(breadcrumb, fileTree);
+            }
+        }
+        
+        // 构建面包屑路径
+        let pathParts = treeData.path.split('/');
+        
+        // 处理根目录显示：将 "." 或空路径显示为 "工作区"
+        if (pathParts.length === 1 && (pathParts[0] === '.' || pathParts[0] === '')) {
+            pathParts = ['工作区'];
+        }
+        
+        let currentPath = '';
+        
+        breadcrumb.innerHTML = pathParts.map((part, index) => {
+            currentPath += (index === 0 ? '' : '/') + part;
+            const isLast = index === pathParts.length - 1;
+            
+            // 对于根目录，使用原始路径 "."
+            const navPath = part === '工作区' ? '.' : currentPath;
+            
+            return `
+                ${index > 0 ? '<span class="breadcrumb-separator">/</span>' : ''}
+                <span class="breadcrumb-item ${isLast ? 'active' : ''}" 
+                      data-path="${navPath}"
+                      onclick="HPLApp.navigateToFolder('${navPath}')">
+                    ${HPLUtils.escapeHtml(part)}
+                </span>
+            `;
+        }).join('');
+    },
+
+
+    /**
+     * 导航到文件夹
+     */
+    navigateToFolder(path) {
+        // 展开指定路径的文件夹
+        HPLFileManager.expandedFolders.add(path);
+        HPLFileManager.renderFileTree();
+    },
+
+    /**
+     * 初始化文件搜索
+     */
+    initFileSearch() {
+        const sidebar = document.getElementById('sidebar');
+        if (!sidebar) return;
+        
+        // 创建搜索容器
+        const searchContainer = document.createElement('div');
+        searchContainer.className = 'file-search-container';
+        searchContainer.innerHTML = `
+            <input type="text" 
+                   class="file-search-input" 
+                   placeholder="🔍 搜索文件..." 
+                   id="file-search-input">
+        `;
+        
+        const fileTree = document.getElementById('file-tree');
+        if (fileTree) {
+            sidebar.insertBefore(searchContainer, fileTree);
+        }
+        
+        // 绑定搜索事件
+        const searchInput = document.getElementById('file-search-input');
+        if (searchInput) {
+            let debounceTimer;
+            searchInput.addEventListener('input', (e) => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    const query = e.target.value.trim();
+                    if (query) {
+                        const results = HPLFileManager.searchFiles(query);
+                        this.showSearchResults(results);
+                    } else {
+                        HPLFileManager.clearSearch();
+                        this.hideSearchResults();
+                    }
+                }, 300);
+            });
+            
+            // ESC 清除搜索
+            searchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    searchInput.value = '';
+                    HPLFileManager.clearSearch();
+                    this.hideSearchResults();
+                }
+            });
+        }
+    },
+
+    /**
+     * 显示搜索结果信息
+     */
+    showSearchResults(results) {
+        let resultsInfo = document.getElementById('search-results-info');
+        if (!resultsInfo) {
+            const sidebar = document.getElementById('sidebar');
+            const fileTree = document.getElementById('file-tree');
+            if (!sidebar || !fileTree) return;
+            
+            resultsInfo = document.createElement('div');
+            resultsInfo.id = 'search-results-info';
+            resultsInfo.className = 'search-results-info';
+            sidebar.insertBefore(resultsInfo, fileTree);
+        }
+        
+        if (results.length > 0) {
+            resultsInfo.textContent = `找到 ${results.length} 个匹配项`;
+            resultsInfo.style.display = 'block';
+        } else {
+            resultsInfo.textContent = '未找到匹配项';
+            resultsInfo.style.display = 'block';
+        }
+    },
+
+    /**
+     * 隐藏搜索结果信息
+     */
+    hideSearchResults() {
+        const resultsInfo = document.getElementById('search-results-info');
+        if (resultsInfo) {
+            resultsInfo.style.display = 'none';
+        }
+    },
+
 
 
     /**
