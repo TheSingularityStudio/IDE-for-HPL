@@ -10,11 +10,15 @@ const HPLEditor = {
     // 错误装饰器集合
     errorDecorations: [],
     
+    // 标记是否正在执行程序化内容变更（用于区分用户编辑和程序加载）
+    isProgrammaticChange: false,
+    
     // 配置常量
     CONFIG: {
         MONACO_VERSION: '0.44.0',
         DEFAULT_FONT_SIZE: 14
     },
+
 
     /**
      * HPL 自动补全提供程序
@@ -219,12 +223,13 @@ const HPLEditor = {
             // 清除错误高亮
             this.clearErrorHighlights();
             
-            // 通知文件管理器内容已变更
-            if (typeof HPLFileManager !== 'undefined') {
+            // 通知文件管理器内容已变更（仅当不是程序化变更时）
+            if (typeof HPLFileManager !== 'undefined' && !this.isProgrammaticChange) {
                 HPLFileManager.markCurrentFileAsModified();
             }
         });
     },
+
 
     /**
      * 获取编辑器值
@@ -238,9 +243,14 @@ const HPLEditor = {
      */
     setValue(value) {
         if (this.instance) {
+            // 标记为程序化变更，避免触发修改标记
+            this.isProgrammaticChange = true;
             this.instance.setValue(value);
+            // 重置标记
+            this.isProgrammaticChange = false;
         }
     },
+
 
     /**
      * 设置编辑器选项
