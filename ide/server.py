@@ -45,15 +45,38 @@ except ImportError:
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 
-# 配置 CORS - 只允许特定来源（生产环境应限制具体端口）
+# 配置 CORS - 根据环境配置
+def get_cors_origins():
+    """获取允许的 CORS 来源"""
+    env = os.environ.get('FLASK_ENV', 'development')
+    if env == 'production':
+        # 生产环境：只允许特定来源（应从环境变量读取）
+        allowed_origins = os.environ.get('ALLOWED_ORIGINS', '')
+        if allowed_origins:
+            return allowed_origins.split(',')
+        # 生产环境默认不允许任何跨域（安全）
+        return []
+    else:
+        # 开发环境：允许本地开发服务器
+        return [
+            "http://localhost:5000",
+            "http://127.0.0.1:5000",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080"
+        ]
+
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:5000", "http://127.0.0.1:5000", 
-                   "http://localhost:3000", "http://127.0.0.1:3000"],
+        "origins": get_cors_origins(),
         "methods": ["GET", "POST"],
-        "allow_headers": ["Content-Type"]
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": False,  # 不发送 cookies，更安全
+        "max_age": 3600  # 预检请求缓存 1 小时
     }
 })
+
 
 
 # 安全配置

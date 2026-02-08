@@ -80,38 +80,114 @@ const HPLEditor = {
     },
 
     /**
-     * 初始化 Monaco Editor
+     * 初始化 Monaco Editor（带重试机制）
      */
-    init() {
+    init(retryCount = 0) {
+        const maxRetries = 3;
+        const baseDelay = 1000; // 1秒基础延迟
+        
         return new Promise((resolve, reject) => {
-            try {
-                require.config({ 
-                    paths: { 
-                        'vs': `https://cdn.jsdelivr.net/npm/monaco-editor@${this.CONFIG.MONACO_VERSION}/min/vs` 
-                    }
-                });
+            const attemptLoad = () => {
+                console.log(`尝试加载 Monaco Editor (尝试 ${retryCount + 1}/${maxRetries + 1})...`);
+                
+                try {
+                    require.config({ 
+                        paths: { 
+                            'vs': `https://cdn.jsdelivr.net/npm/monaco-editor@${this.CONFIG.MONACO_VERSION}/min/vs` 
+                        },
+                        // 添加错误回调配置
+                        onError: (err) => {
+                            console.warn('RequireJS 错误:', err);
+                        }
+                    });
 
-                require(['vs/editor/editor.main'], () => {
-                    try {
-                        this._registerLanguage();
-                        this._createEditor();
-                        this._setupEventListeners();
-                        console.log('Monaco Editor 初始化完成');
-                        resolve(this.instance);
-                    } catch (error) {
-                        console.error('Monaco Editor 初始化失败:', error);
-                        reject(error);
-                    }
-                }, (error) => {
-                    console.error('加载 Monaco Editor 失败:', error);
-                    reject(error);
-                });
-            } catch (error) {
-                console.error('初始化 Monaco Editor 时发生错误:', error);
-                reject(error);
-            }
+                    require(['vs/editor/editor.main'], () => {
+                        try {
+                            this._registerLanguage();
+                            this._createEditor();
+                            this._setupEventListeners();
+                            console.log('Monaco Editor 初始化完成');
+                            resolve(this.instance);
+                        } catch (error) {
+                            console.error('Monaco Editor 初始化失败:', error);
+                            // 尝试降级方案
+                            this._initFallback(retryCount, maxRetries, baseDelay, resolve, reject, error);
+                        }
+                    }, (error) => {
+                        // AMD 加载失败的回调
+                        console.error('加载 Monaco Editor 失败:', error);
+                        this._initFallback(retryCount, maxRetries, baseDelay, resolve, reject, error);
+                    });
+                } catch (error) {
+                    console.error('初始化 Monaco Editor 时发生错误:', error);
+                    this._initFallback(retryCount, maxRetries, baseDelay, resolve, reject, error);
+                }
+            };
+            
+            attemptLoad();
         });
     },
+
+    /**
+     * 初始化失败后的降级处理
+     */
+    _initFallback(retryCount, maxRetries, baseDelay, resolve, reject, error) {
+        if (retryCount < maxRetries) {
+            const delay = baseDelay * Math.pow(2, retryCount); // 指数退避
+            console.log(`${delay}ms 后重试...`);
+            
+            setTimeout(() => {
+                this.init(retryCount + 1).then(resolve).catch(reject);
+            }, delay);
+        } else {
+            // 所有重试失败，显示降级界面
+            console.error('Monaco Editor 加载失败，启用降级模式');
+            this._showFallbackEditor();
+            reject(error);
+        }
+    },
+
+    /**
+     * 显示降级编辑器（简单的 textarea）
+     */
+    _showFallbackEditor() {
+        const editorContainer = document.getElementById('editor');
+        if (!editorContainer) return;
+        
+        // 创建降级编辑器
+        const fallbackDiv = document.createElement('div');
+        fallbackDiv.style.cssText = 'width:100%;height:100%;background:#1e1e1e;color:#ccc;padding:10px;';
+        
+        const textarea = document.createElement('textarea');
+        textarea.id = 'fallback-editor';
+        textarea.style.cssText = 'width:100%;height:100%;background:#1e1e1e;color:#ccc;border:none;resize:none;font-family:Consolas,monospace;font-size:14px;outline:none;';
+        textarea.placeholder = '-- Monaco Editor 加载失败，使用降级编辑器 --\n\n请检查网络连接或刷新页面重试。\n\n支持的基本编辑功能：\n- 输入和编辑代码\n- Ctrl+S 保存\n- 代码将被发送到后端执行';
+        
+        fallbackDiv.appendChild(textarea);
+        editorContainer.appendChild(fallbackDiv);
+        
+        // 添加获取/设置值的方法兼容
+        this.instance = {
+            getValue: () => textarea.value,
+            setValue: (v) => { textarea.value = v; },
+            focus: () => textarea.focus(),
+            updateOptions: () => {},
+            revealLineInCenter: () => {},
+            setPosition: () => {},
+            onDidChangeCursorPosition: () => ({ dispose: () => {} }),
+            onDidChangeModelContent: (cb) => {
+                textarea.addEventListener('input', cb);
+                return { dispose: () => {} };
+            },
+            deltaDecorations: () => []
+        };
+        
+        // 显示警告
+        if (typeof HPLUI !== 'undefined') {
+            HPLUI.showOutput('⚠️ Monaco Editor 加载失败，已启用降级编辑器', 'warning');
+        }
+    },
+
 
     /**
      * 注册 HPL 语言

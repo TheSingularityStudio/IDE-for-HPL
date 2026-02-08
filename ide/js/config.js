@@ -40,14 +40,78 @@ const HPLConfig = {
     },
 
     /**
+     * 验证配置项
+     */
+    validateConfig(config) {
+        const errors = [];
+        
+        // 验证 API URL
+        if (config.apiBaseUrl !== undefined) {
+            if (!config.apiBaseUrl || typeof config.apiBaseUrl !== 'string') {
+                errors.push('API 地址不能为空');
+            } else {
+                try {
+                    new URL(config.apiBaseUrl);
+                } catch (e) {
+                    errors.push('API 地址格式不正确');
+                }
+            }
+        }
+        
+        // 验证超时时间
+        if (config.requestTimeout !== undefined) {
+            const timeout = parseInt(config.requestTimeout);
+            if (isNaN(timeout) || timeout < 5000) {
+                errors.push('请求超时时间不能小于 5000 毫秒');
+            } else if (timeout > 120000) {
+                errors.push('请求超时时间不能大于 120000 毫秒');
+            }
+        }
+        
+        // 验证字体大小
+        if (config.fontSize !== undefined) {
+            const fontSize = parseInt(config.fontSize);
+            if (isNaN(fontSize) || fontSize < 8) {
+                errors.push('字体大小不能小于 8');
+            } else if (fontSize > 32) {
+                errors.push('字体大小不能大于 32');
+            }
+        }
+        
+        // 验证主题
+        if (config.editorTheme !== undefined) {
+            const allowedThemes = ['vs-dark', 'vs', 'hc-black'];
+            if (!allowedThemes.includes(config.editorTheme)) {
+                errors.push(`主题必须是以下之一: ${allowedThemes.join(', ')}`);
+            }
+        }
+        
+        // 验证自动保存
+        if (config.autoSave !== undefined) {
+            if (typeof config.autoSave !== 'boolean') {
+                errors.push('自动保存必须是布尔值');
+            }
+        }
+        
+        return errors;
+    },
+
+    /**
      * 保存配置
      */
     saveConfig(config) {
+        // 验证配置
+        const errors = this.validateConfig(config);
+        if (errors.length > 0) {
+            throw new Error('配置验证失败: ' + errors.join(', '));
+        }
+        
         const currentConfig = this.getConfig();
         const newConfig = { ...currentConfig, ...config };
         localStorage.setItem(this.storageKey, JSON.stringify(newConfig));
         return newConfig;
     },
+
 
     /**
      * 重置为默认配置
