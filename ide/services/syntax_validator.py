@@ -34,18 +34,26 @@ class SyntaxErrorInfo:
 class HPLSyntaxValidator:
     """HPL语法验证器"""
     
-    # HPL关键字
+    # HPL关键字 (基于YAML的HPL语言)
     KEYWORDS = {
-        'class', 'object', 'func', 'if', 'else', 'elif', 'for', 'while',
-        'return', 'break', 'continue', 'try', 'catch', 'throw', 'new',
-        'this', 'super', 'true', 'false', 'null', 'includes', 'import',
-        'as', 'from', 'in', 'and', 'or', 'not', 'is', 'print', 'input'
+        'includes', 'imports', 'classes', 'objects', 'main', 'call',
+        'if', 'else', 'for', 'while', 'return', 'break', 'continue',
+        'try', 'catch', 'echo', 'this', 'true', 'false', 'null',
+        'and', 'or', 'not', 'is', 'in', 'len', 'type', 'int', 'str',
+        'abs', 'max', 'min', 'parent'
     }
     
-    # 有效的类型名
-    BUILTIN_TYPES = {
-        'int', 'float', 'string', 'bool', 'list', 'dict', 'void', 'any'
+    # HPL内置函数
+    BUILTIN_FUNCTIONS = {
+        'echo', 'len', 'type', 'int', 'str', 'abs', 'max', 'min'
     }
+    
+    # HPL操作符
+    OPERATORS = {
+        '+', '-', '*', '/', '%', '==', '!=', '<', '>', '<=', '>=',
+        '&&', '||', '!', '++', '='
+    }
+
     
     def __init__(self):
         self.errors: List[SyntaxErrorInfo] = []
@@ -104,7 +112,7 @@ class HPLSyntaxValidator:
         }
     
     def _check_basic_structure(self, code: str):
-        """检查基本代码结构"""
+        """检查HPL基本YAML结构"""
         lines = code.split('\n')
         
         # 检查是否为空文件
@@ -117,23 +125,73 @@ class HPLSyntaxValidator:
             ))
             return
         
-        # 检查includes部分格式
+        # 检查顶级键
+        top_level_keys = []
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            
+            # 检查是否是顶级键（无缩进）
+            if line[0] not in ' \t' and ':' in stripped:
+                key = stripped.split(':')[0].strip()
+                top_level_keys.append((i, key))
+        
+        # 验证必要的顶级键
+        valid_keys = {'includes', 'imports', 'classes', 'objects', 'main', 'call'}
+        found_keys = {key for _, key in top_level_keys}
+        
+        # 检查是否有main但没有call
+        if 'main' in found_keys and 'call' not in found_keys:
+            self.warnings.append(SyntaxErrorInfo(
+                line=1,
+                column=1,
+                message="定义了main但没有call语句，程序不会执行",
+                severity="warning"
+            ))
+        
+        # 检查call格式
+        self._check_call_statement(lines)
+        
+        # 检查includes和imports格式
+        self._check_includes_section(lines)
+        self._check_imports_section(lines)
+        
+        # 检查classes格式
+        self._check_classes_section(lines)
+        
+        # 检查objects格式
+        self._check_objects_section(lines)
+    
+    def _check_call_statement(self, lines: List[str]):
+        """检查call语句格式"""
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if stripped.startswith('call:') and not stripped.startswith('call: '):
+                if stripped != 'call: main()':
+                    self.errors.append(SyntaxErrorInfo(
+                        line=i,
+                        column=1,
+                        message="call语句格式错误，应为: call: main()",
+                        severity="error",
+                        code=line
+                    ))
+    
+    def _check_includes_section(self, lines: List[str]):
+        """检查includes部分"""
         in_includes = False
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
             
-            # 检查includes部分
-            if stripped.startswith('includes:'):
+            if stripped == 'includes:':
                 in_includes = True
-                # 检查includes后面是否有内容
-                if ':' in stripped and stripped.index(':') == len(stripped) - 1:
-                    # includes: 后面没有内容，检查下一行
-                    pass
+                continue
             elif in_includes:
+                if not stripped or stripped.startswith('#'):
+                    continue
                 if stripped.startswith('-'):
-                    # 检查include项格式
-                    include_item = stripped[1:].strip()
-                    if not include_item:
+                    include_file = stripped[1:].strip()
+                    if not include_file:
                         self.errors.append(SyntaxErrorInfo(
                             line=i,
                             column=line.index('-') + 1,
@@ -141,9 +199,141 @@ class HPLSyntaxValidator:
                             severity="error",
                             code=line
                         ))
-                elif stripped and not stripped.startswith('#'):
-                    # includes部分结束
+                    elif not include_file.endswith('.hpl'):
+                        self.warnings.append(SyntaxErrorInfo(
+                            line=i,
+                            column=line.index('-') + 1,
+                            message=f"包含文件'{include_file}'建议使用.hpl扩展名",
+                            severity="warning",
+                            code=line
+                        ))
+                elif ':' in stripped and not stripped.startswith('-'):
+                    # 新的顶级键，includes部分结束
                     in_includes = False
+    
+    def _check_imports_section(self, lines: List[str]):
+        """检查imports部分"""
+        in_imports = False
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            
+            if stripped == 'imports:':
+                in_imports = True
+                continue
+            elif in_imports:
+                if not stripped or stripped.startswith('#'):
+                    continue
+                if stripped.startswith('-'):
+                    # 检查是否是别名格式: - module: alias
+                    import_part = stripped[1:].strip()
+                    if ':' in import_part:
+                        # 别名格式
+                        parts = import_part.split(':')
+                        if len(parts) != 2:
+                            self.errors.append(SyntaxErrorInfo(
+                                line=i,
+                                column=line.index('-') + 1,
+                                message="import别名格式错误，应为: - module: alias",
+                                severity="error",
+                                code=line
+                            ))
+                elif ':' in stripped and not stripped.startswith('-'):
+                    in_imports = False
+    
+    def _check_classes_section(self, lines: List[str]):
+        """检查classes部分"""
+        in_classes = False
+        current_class = None
+        class_indent = 0
+        
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            
+            # 计算缩进级别
+            indent = len(line) - len(line.lstrip())
+            
+            if stripped == 'classes:':
+                in_classes = True
+                class_indent = indent
+                continue
+            
+            if in_classes:
+                # 检查是否是新的顶级键（结束classes）
+                if indent == class_indent and ':' in stripped:
+                    if stripped.split(':')[0].strip() in {'includes', 'imports', 'objects', 'main', 'call'}:
+                        in_classes = False
+                        continue
+                
+                # 类定义应该是classes下一级
+                if indent == class_indent + 2 and ':' in stripped:
+                    class_name = stripped.split(':')[0].strip()
+                    # 检查类名是否有效
+                    if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', class_name):
+                        self.errors.append(SyntaxErrorInfo(
+                            line=i,
+                            column=indent + 1,
+                            message=f"类名'{class_name}'无效，类名必须以字母或下划线开头",
+                            severity="error",
+                            code=line
+                        ))
+                    current_class = class_name
+                
+                # 检查parent声明
+                if indent == class_indent + 4 and stripped.startswith('parent:'):
+                    parent_class = stripped.split(':')[1].strip()
+                    if not parent_class:
+                        self.errors.append(SyntaxErrorInfo(
+                            line=i,
+                            column=line.index('parent:') + 1,
+                            message="parent声明不能为空",
+                            severity="error",
+                            code=line
+                        ))
+                
+                # 检查方法定义（箭头函数）
+                if indent == class_indent + 4 and '=>' in stripped:
+                    self._check_arrow_function(i, line, stripped, indent)
+    
+    def _check_objects_section(self, lines: List[str]):
+        """检查objects部分"""
+        in_objects = False
+        objects_indent = 0
+        
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            
+            indent = len(line) - len(line.lstrip())
+            
+            if stripped == 'objects:':
+                in_objects = True
+                objects_indent = indent
+                continue
+            
+            if in_objects:
+                # 检查是否是新的顶级键
+                if indent == objects_indent and ':' in stripped:
+                    key = stripped.split(':')[0].strip()
+                    if key in {'includes', 'imports', 'classes', 'main', 'call'}:
+                        in_objects = False
+                        continue
+                
+                # 对象定义应该是objects下一级
+                if indent == objects_indent + 2 and ':' in stripped:
+                    # 格式: objectName: ClassName() 或 objectName: ClassName
+                    obj_match = re.match(r'^(\w+)\s*:\s*(\w+)\s*(?:\(([^)]*)\))?\s*$', stripped)
+                    if not obj_match:
+                        self.errors.append(SyntaxErrorInfo(
+                            line=i,
+                            column=indent + 1,
+                            message="对象定义格式错误，应为: objectName: ClassName() 或 objectName: ClassName",
+                            severity="error",
+                            code=line
+                        ))
+
     
     def _check_brackets(self, code: str):
         """检查括号匹配"""
@@ -260,6 +450,49 @@ class HPLSyntaxValidator:
                     code=line
                 ))
     
+    def _check_arrow_function(self, line_num: int, line: str, stripped: str, indent: int):
+        """检查箭头函数语法: methodName: (params) => { code }"""
+        # 提取方法名
+        method_match = re.match(r'^(\w+)\s*:\s*\(([^)]*)\)\s*=>\s*\{', stripped)
+        if not method_match:
+            # 可能是多行箭头函数
+            method_match = re.match(r'^(\w+)\s*:\s*\(([^)]*)\)\s*=>\s*$', stripped)
+            if not method_match:
+                self.errors.append(SyntaxErrorInfo(
+                    line=line_num,
+                    column=indent + 1,
+                    message="箭头函数语法错误，应为: methodName: (params) => { code } 或 methodName: (params) =>",
+                    severity="error",
+                    code=line
+                ))
+                return
+        
+        method_name = method_match.group(1)
+        params = method_match.group(2)
+        
+        # 检查方法名
+        if not re.match(r'^[a-z_][a-z0-9_]*$', method_name):
+            self.warnings.append(SyntaxErrorInfo(
+                line=line_num,
+                column=indent + 1,
+                message=f"方法名'{method_name}'建议使用小写字母开头",
+                severity="warning",
+                code=line
+            ))
+        
+        # 检查参数
+        if params.strip():
+            param_list = [p.strip() for p in params.split(',')]
+            for param in param_list:
+                if not re.match(r'^[a-z_][a-z0-9_]*$', param):
+                    self.errors.append(SyntaxErrorInfo(
+                        line=line_num,
+                        column=line.find(param) + 1,
+                        message=f"参数名'{param}'无效",
+                        severity="error",
+                        code=line
+                    ))
+    
     def _check_syntax_rules(self, code: str):
         """检查HPL特定语法规则"""
         lines = code.split('\n')
@@ -269,139 +502,228 @@ class HPLSyntaxValidator:
             if not stripped or stripped.startswith('#'):
                 continue
             
-            # 检查类定义
-            if stripped.startswith('class '):
-                self._check_class_definition(i, line, stripped)
-            
-            # 检查函数定义
-            elif stripped.startswith('func '):
-                self._check_function_definition(i, line, stripped)
-            
-            # 检查对象定义
-            elif stripped.startswith('object '):
-                self._check_object_definition(i, line, stripped)
-            
-            # 检查if语句
-            elif stripped.startswith('if '):
+            # 检查控制流语句
+            if stripped.startswith('if '):
                 self._check_if_statement(i, line, stripped)
-            
-            # 检查for循环
             elif stripped.startswith('for '):
                 self._check_for_statement(i, line, stripped)
+            elif stripped.startswith('while '):
+                self._check_while_statement(i, line, stripped)
+            elif stripped.startswith('try') and stripped.rstrip() == 'try':
+                self._check_try_statement(i, line, stripped)
+            elif stripped.startswith('catch '):
+                self._check_catch_statement(i, line, stripped)
+            elif stripped.startswith('else') and stripped.rstrip() == 'else':
+                self._check_else_statement(i, line, stripped)
             
-            # 检查赋值语句
-            elif '=' in stripped and not stripped.startswith('//'):
+            # 检查echo语句
+            elif stripped.startswith('echo '):
+                self._check_echo_statement(i, line, stripped)
+            
+            # 检查return语句
+            elif stripped.startswith('return'):
+                self._check_return_statement(i, line, stripped)
+            
+            # 检查break/continue
+            elif stripped in {'break', 'continue'} or stripped.startswith('break ') or stripped.startswith('continue '):
+                self._check_loop_control(i, line, stripped)
+            
+            # 检查赋值语句（包括数组赋值）
+            elif '=' in stripped and not any(op in stripped for op in ['==', '!=', '<=', '>=']):
                 self._check_assignment(i, line, stripped)
             
             # 检查方法调用
             elif '.' in stripped and '(' in stripped:
                 self._check_method_call(i, line, stripped)
-    
-    def _check_class_definition(self, line_num: int, line: str, stripped: str):
-        """检查类定义语法"""
-        # class ClassName(ParentClass):
-        pattern = r'^class\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\(([^)]*)\))?\s*:\s*$'
-        match = re.match(pattern, stripped)
-        
-        if not match:
-            self.errors.append(SyntaxErrorInfo(
-                line=line_num,
-                column=line.index('class') + 1,
-                message="类定义语法错误，正确格式: class ClassName(Parent): 或 class ClassName:",
-                severity="error",
-                code=line
-            ))
-    
-    def _check_function_definition(self, line_num: int, line: str, stripped: str):
-        """检查函数定义语法"""
-        # func functionName(param1, param2):
-        # func functionName() -> returnType:
-        pattern = r'^func\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*(?:->\s*([A-Za-z_][A-Za-z0-9_]*))?\s*:\s*$'
-        match = re.match(pattern, stripped)
-        
-        if not match:
-            self.errors.append(SyntaxErrorInfo(
-                line=line_num,
-                column=line.index('func') + 1,
-                message="函数定义语法错误，正确格式: func name(params): 或 func name(params) -> type:",
-                severity="error",
-                code=line
-            ))
-    
-    def _check_object_definition(self, line_num: int, line: str, stripped: str):
-        """检查对象定义语法"""
-        # object ObjectName = ClassName(params)
-        pattern = r'^object\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*$'
-        match = re.match(pattern, stripped)
-        
-        if not match:
-            self.errors.append(SyntaxErrorInfo(
-                line=line_num,
-                column=line.index('object') + 1,
-                message="对象定义语法错误，正确格式: object Name = ClassName(params)",
-                severity="error",
-                code=line
-            ))
+            
+            # 检查数组访问
+            elif '[' in stripped and ']' in stripped:
+                self._check_array_access(i, line, stripped)
+
     
     def _check_if_statement(self, line_num: int, line: str, stripped: str):
-        """检查if语句语法"""
-        # if condition:
-        pattern = r'^if\s+(.+):\s*$'
+        """检查if语句语法: if (condition) :"""
+        # HPL使用: if (condition) :  (允许行尾注释)
+        pattern = r'^if\s+\((.+)\)\s*:\s*(?:#.*)?$'
         match = re.match(pattern, stripped)
         
         if not match:
             self.errors.append(SyntaxErrorInfo(
                 line=line_num,
                 column=line.index('if') + 1,
-                message="if语句语法错误，正确格式: if condition:",
+                message="if语句语法错误，正确格式: if (condition) :",
                 severity="error",
                 code=line
             ))
+
     
     def _check_for_statement(self, line_num: int, line: str, stripped: str):
-        """检查for循环语法"""
-        # for item in collection:
-        pattern = r'^for\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+):\s*$'
+        """检查for循环语法: for (init; cond; incr) :"""
+        # HPL使用C风格for循环: for (i = 0; i < count; i++) :  (允许行尾注释)
+        pattern = r'^for\s+\(([^;]*);\s*([^;]*);\s*([^)]*)\)\s*:\s*(?:#.*)?$'
+        match = re.match(pattern, stripped)
+        
+        if not match:
+            # 也支持for-in风格
+            pattern_in = r'^for\s+\(([^)]+)\)\s*:\s*(?:#.*)?$'
+            match_in = re.match(pattern_in, stripped)
+            if not match_in:
+                self.errors.append(SyntaxErrorInfo(
+                    line=line_num,
+                    column=line.index('for') + 1,
+                    message="for循环语法错误，正确格式: for (init; condition; increment) :",
+                    severity="error",
+                    code=line
+                ))
+
+    
+    def _check_while_statement(self, line_num: int, line: str, stripped: str):
+        """检查while循环语法: while (condition) :"""
+        pattern = r'^while\s+\((.+)\)\s*:\s*(?:#.*)?$'
         match = re.match(pattern, stripped)
         
         if not match:
             self.errors.append(SyntaxErrorInfo(
                 line=line_num,
-                column=line.index('for') + 1,
-                message="for循环语法错误，正确格式: for item in collection:",
+                column=line.index('while') + 1,
+                message="while循环语法错误，正确格式: while (condition) :",
                 severity="error",
                 code=line
             ))
+
+    
+    def _check_try_statement(self, line_num: int, line: str, stripped: str):
+        """检查try语句语法: try :"""
+        if stripped.rstrip() != 'try':
+            self.errors.append(SyntaxErrorInfo(
+                line=line_num,
+                column=1,
+                message="try语句格式错误，应为: try :",
+                severity="error",
+                code=line
+            ))
+    
+    def _check_catch_statement(self, line_num: int, line: str, stripped: str):
+        """检查catch语句语法: catch (error) :"""
+        pattern = r'^catch\s+\((\w+)\)\s*:\s*(?:#.*)?$'
+        match = re.match(pattern, stripped)
+        
+        if not match:
+            self.errors.append(SyntaxErrorInfo(
+                line=line_num,
+                column=line.index('catch') + 1,
+                message="catch语句语法错误，正确格式: catch (error) :",
+                severity="error",
+                code=line
+            ))
+
+    
+    def _check_else_statement(self, line_num: int, line: str, stripped: str):
+        """检查else语句语法: else :"""
+        if stripped.rstrip() != 'else':
+            self.errors.append(SyntaxErrorInfo(
+                line=line_num,
+                column=1,
+                message="else语句格式错误，应为: else :",
+                severity="error",
+                code=line
+            ))
+    
+    def _check_echo_statement(self, line_num: int, line: str, stripped: str):
+        """检查echo语句语法: echo value 或 echo expression"""
+        # echo支持: echo "string", echo variable, echo "str" + var
+        pattern = r'^echo\s+(.+)$'
+        match = re.match(pattern, stripped)
+        
+        if not match:
+            self.errors.append(SyntaxErrorInfo(
+                line=line_num,
+                column=line.index('echo') + 1,
+                message="echo语句语法错误",
+                severity="error",
+                code=line
+            ))
+    
+    def _check_return_statement(self, line_num: int, line: str, stripped: str):
+        """检查return语句语法: return value 或 return"""
+        pattern = r'^return(?:\s+(.+))?$'
+        match = re.match(pattern, stripped)
+        
+        if not match:
+            self.errors.append(SyntaxErrorInfo(
+                line=line_num,
+                column=line.index('return') + 1,
+                message="return语句语法错误",
+                severity="error",
+                code=line
+            ))
+    
+    def _check_loop_control(self, line_num: int, line: str, stripped: str):
+        """检查break/continue语句"""
+        if stripped not in {'break', 'continue'}:
+            # 检查是否有额外的内容
+            if not re.match(r'^(break|continue)\s*$', stripped):
+                self.errors.append(SyntaxErrorInfo(
+                    line=line_num,
+                    column=1,
+                    message="break/continue语句格式错误，应为单独的break或continue",
+                    severity="error",
+                    code=line
+                ))
+
     
     def _check_assignment(self, line_num: int, line: str, stripped: str):
         """检查赋值语句"""
-        # 检查是否是有效的赋值
-        # 排除比较运算符 ==, !=, <=, >=
-        if '==' in stripped or '!=' in stripped or '<=' in stripped or '>=' in stripped:
+        # 排除比较运算符
+        if any(op in stripped for op in ['==', '!=', '<=', '>=']):
             return
         
-        # 检查赋值语法
-        # var = value
-        # var: type = value
-        pattern = r'^([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*([A-Za-z_][A-Za-z0-9_]*))?\s*=\s*(.+)$'
+        # 检查是否是数组元素赋值: arr[index] = value
+        array_pattern = r'^(\w+)\s*\[([^\]]+)\]\s*=\s*(.+)$'
+        array_match = re.match(array_pattern, stripped)
+        if array_match:
+            return  # 数组赋值是合法的
+        
+        # 普通赋值: var = value
+        pattern = r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$'
         match = re.match(pattern, stripped)
         
         if not match:
-            # 可能是复合赋值或其他情况，暂时不报错
+            # 可能是复合赋值或其他情况
             pass
     
+    def _check_array_access(self, line_num: int, line: str, stripped: str):
+        """检查数组访问语法: arr[index]"""
+        # 检查数组访问或数组元素赋值
+        pattern = r'^(\w+)\s*\[([^\]]+)\]\s*(?:=\s*(.+))?$'
+        match = re.match(pattern, stripped)
+        
+        if match:
+            index = match.group(2).strip()
+            # 检查索引是否为有效的表达式
+            if not re.match(r'^\w+$|^\d+$|^\w+\s*[\+\-]\s*\d+$', index):
+                # 复杂的索引表达式，基本检查通过
+                pass
+
+    
     def _check_method_call(self, line_num: int, line: str, stripped: str):
-        """检查方法调用语法"""
-        # object.method(args)
-        # 简单检查括号匹配
-        if stripped.count('(') != stripped.count(')'):
-            self.errors.append(SyntaxErrorInfo(
-                line=line_num,
-                column=line.index('(') + 1 if '(' in line else 1,
-                message="方法调用括号不匹配",
-                severity="error",
-                code=line
-            ))
+        """检查方法调用语法: object.method(args) 或 this.method(args)"""
+        # 支持: obj.method(), this.method(), obj.method(args), module.func()
+        pattern = r'^((?:this\.)?\w+(?:\.\w+)*)\s*\(([^)]*)\)\s*$'
+        match = re.match(pattern, stripped)
+        
+        if not match:
+            # 可能是链式调用或其他复杂情况
+            # 只检查括号匹配
+            if stripped.count('(') != stripped.count(')'):
+                self.errors.append(SyntaxErrorInfo(
+                    line=line_num,
+                    column=line.index('(') + 1 if '(' in line else 1,
+                    message="方法调用括号不匹配",
+                    severity="error",
+                    code=line
+                ))
+
     
     def _check_with_runtime(self, code: str):
         """尝试使用hpl_runtime进行解析（如果可用）"""
@@ -418,10 +740,11 @@ class HPLSyntaxValidator:
             
             from hpl_runtime.parser import HPLParser
             
-            # 创建临时文件
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.hpl', delete=False) as f:
+            # 创建临时文件（使用UTF-8编码）
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.hpl', delete=False, encoding='utf-8') as f:
                 f.write(code)
                 temp_file = f.name
+
             
             try:
                 # 尝试解析
