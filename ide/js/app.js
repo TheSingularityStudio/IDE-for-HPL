@@ -8,10 +8,50 @@ const HPLApp = {
     isRunning: false,
 
     /**
+     * 初始化全局错误处理
+     */
+    initErrorHandling() {
+        // 捕获未处理的 JavaScript 错误
+        window.onerror = (message, source, lineno, colno, error) => {
+            console.error('全局错误捕获:', { message, source, lineno, colno, error });
+            HPLUI.showOutput(`❌ 程序错误: ${message} (行 ${lineno})`, 'error');
+            
+            // 防止错误扩散
+            this.isRunning = false;
+            HPLUI.updateRunButtonState(false);
+            
+            return true; // 阻止默认错误处理
+        };
+
+        // 捕获未处理的 Promise 拒绝
+        window.onunhandledrejection = (event) => {
+            console.error('未处理的 Promise 拒绝:', event.reason);
+            HPLUI.showOutput(`❌ 异步错误: ${event.reason?.message || event.reason}`, 'error');
+            
+            // 防止错误扩散
+            this.isRunning = false;
+            HPLUI.updateRunButtonState(false);
+            
+            event.preventDefault(); // 阻止默认错误处理
+        };
+
+        // 捕获资源加载错误
+        window.addEventListener('error', (event) => {
+            if (event.target && (event.target.tagName === 'SCRIPT' || event.target.tagName === 'LINK')) {
+                console.error('资源加载失败:', event.target.src || event.target.href);
+                HPLUI.showOutput('⚠️ 资源加载失败，请检查网络连接', 'error');
+            }
+        }, true);
+    },
+
+    /**
      * 初始化应用
      */
     async init() {
         console.log('HPL IDE 初始化开始...');
+        
+        // 首先初始化错误处理
+        this.initErrorHandling();
         
         try {
             // 初始化编辑器
@@ -32,6 +72,7 @@ const HPLApp = {
             HPLUI.showOutput('初始化失败: ' + error.message, 'error');
         }
     },
+
 
     /**
      * 绑定所有事件
@@ -265,25 +306,43 @@ const HPLApp = {
             // 清空现有内容
             fileTree.innerHTML = '';
             
-            // 添加文件夹节点
+            // 添加文件夹节点（使用安全的 DOM 操作）
             const folderDiv = document.createElement('div');
             folderDiv.className = 'file-item folder expanded';
             folderDiv.dataset.path = 'examples';
-            folderDiv.innerHTML = '<span class="file-icon">📂</span><span class="file-name">examples</span>';
+            
+            const folderIcon = document.createElement('span');
+            folderIcon.className = 'file-icon';
+            folderIcon.textContent = '📂';
+            
+            const folderName = document.createElement('span');
+            folderName.className = 'file-name';
+            folderName.textContent = 'examples';
+            
+            folderDiv.appendChild(folderIcon);
+            folderDiv.appendChild(folderName);
             fileTree.appendChild(folderDiv);
             
-            // 添加所有示例文件
+            // 添加所有示例文件（使用安全的 DOM 操作）
             examples.forEach(example => {
                 const fileDiv = document.createElement('div');
                 fileDiv.className = 'file-item file';
                 fileDiv.dataset.path = `examples/${example.name}`;
                 fileDiv.style.paddingLeft = '20px';
-                fileDiv.innerHTML = `
-                    <span class="file-icon">📄</span>
-                    <span class="file-name">${HPLUtils.escapeHtml(example.name)}</span>
-                `;
+                
+                const fileIcon = document.createElement('span');
+                fileIcon.className = 'file-icon';
+                fileIcon.textContent = '📄';
+                
+                const fileName = document.createElement('span');
+                fileName.className = 'file-name';
+                fileName.textContent = example.name; // textContent 自动转义
+                
+                fileDiv.appendChild(fileIcon);
+                fileDiv.appendChild(fileName);
                 fileTree.appendChild(fileDiv);
             });
+
             
             console.log(`文件树已刷新，共 ${examples.length} 个文件`);
             HPLUI.hideLoading();

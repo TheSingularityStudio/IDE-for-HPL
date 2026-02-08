@@ -8,15 +8,16 @@ HPL IDE 后端服务器
 - 请求大小限制（最大1MB）
 - 路径遍历防护
 - 临时文件自动清理
+- 子进程隔离执行环境
 """
 
 import sys
-
 import os
 import tempfile
-import signal
 import threading
 import logging
+import subprocess
+import json
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from functools import wraps
@@ -83,11 +84,6 @@ def limit_request_size(max_size):
 class TimeoutException(Exception):
     """执行超时异常"""
     pass
-
-
-def timeout_handler(signum, frame):
-    """信号处理函数：执行超时"""
-    raise TimeoutException("代码执行超时")
 
 
 def execute_with_timeout(func, timeout_sec, *args, **kwargs):
@@ -265,14 +261,144 @@ def validate_path(file_path, allowed_dir):
     return abs_path
 
 
+def execute_hpl_in_subprocess(file_path, timeout=5):
+    """
+    在子进程中执行 HPL 文件
+    提供更好的隔离和安全性
+    """
+    try:
+        # 创建子进程执行脚本
+        script = f'''
+import sys
+import os
+import io
+import contextlib
+
+# 限制资源使用
+try:
+    import resource
+    # 限制内存使用 (100MB)
+    resource.setrlimit(resource.RLIMIT_AS, (100 * 1024 * 1024, 100 * 1024 * 1024))
+    # 限制 CPU 时间
+    resource.setrlimit(resource.RLIMIT_CPU, ({timeout}, {timeout}))
+except ImportError:
+    pass  # Windows 不支持 resource 模块
+
+# 添加 hpl_runtime 到路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+try:
+    from hpl_runtime.parser import HPLParser
+    from hpl_runtime.evaluator import HPLEvaluator
+    from hpl_runtime.models import ImportStatement
+
+    # 捕获输出
+    output_buffer = io.StringIO()
+    
+    with contextlib.redirect_stdout(output_buffer):
+        parser = HPLParser(r'{file_path}')
+        classes, objects, main_func, call_target, imports = parser.parse()
+        
+        evaluator = HPLEvaluator(classes, objects, main_func, call_target)
+        
+        # 处理顶层导入
+        for imp in imports:
+            module_name = imp['module']
+            alias = imp.get('alias', module_name)
+            import_stmt = ImportStatement(module_name, alias)
+            evaluator.execute_import(import_stmt, evaluator.global_scope)
+        
+        evaluator.run()
+    
+    output = output_buffer.getvalue()
+    print("SUCCESS:" + json.dumps({{"output": output}}))
+    
+except Exception as e:
+    import traceback
+    error_msg = str(e)
+    tb = traceback.format_exc()
+    print("ERROR:" + json.dumps({{
+        "error": error_msg,
+        "traceback": tb,
+        "type": type(e).__name__
+    }}))
+    sys.exit(1)
+'''
+        
+        # 写入临时脚本文件
+        script_path = os.path.join(os.path.dirname(file_path), '_execute_script.py')
+        with open(script_path, 'w', encoding='utf-8') as f:
+            f.write(script)
+        
+        # 执行子进程
+        result = subprocess.run(
+            [sys.executable, script_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=os.path.dirname(file_path)
+        )
+        
+        # 清理脚本文件
+        try:
+            os.remove(script_path)
+        except:
+            pass
+        
+        # 解析输出
+        stdout = result.stdout.strip()
+        
+        if result.returncode != 0:
+            # 尝试从 stderr 解析错误
+            stderr = result.stderr.strip()
+            return {
+                'success': False,
+                'error': stderr or '执行失败',
+                'output': stdout
+            }
+        
+        # 解析结果
+        if stdout.startswith('SUCCESS:'):
+            data = json.loads(stdout[8:])
+            return {
+                'success': True,
+                'output': data.get('output', '')
+            }
+        elif stdout.startswith('ERROR:'):
+            data = json.loads(stdout[6:])
+            return {
+                'success': False,
+                'error': data.get('error', '未知错误'),
+                'traceback': data.get('traceback', ''),
+                'type': data.get('type', 'Error')
+            }
+        else:
+            return {
+                'success': True,
+                'output': stdout
+            }
+            
+    except subprocess.TimeoutExpired:
+        logger.warning(f"子进程执行超时（{timeout}秒）")
+        return {
+            'success': False,
+            'error': f'代码执行超过 {timeout} 秒限制'
+        }
+    except Exception as e:
+        logger.error(f"子进程执行错误: {str(e)}")
+        return {
+            'success': False,
+            'error': f'执行错误: {str(e)}'
+        }
+
+
 @app.route('/api/run', methods=['POST'])
 @limit_request_size(MAX_REQUEST_SIZE)
 def run_code():
     """
     执行 HPL 代码
     接收代码字符串，保存到临时文件并执行
-    添加超时限制防止无限循环
-    自动处理 include 文件复制
+    使用子进程隔离执行环境
     """
     # 检查 hpl_runtime 是否可用
     if not hpl_runtime_available:
@@ -317,8 +443,17 @@ def run_code():
         
         logger.info(f"执行临时文件: {temp_file}")
         
-        # 执行 HPL 代码（带超时）
-        result = execute_with_timeout(execute_hpl, MAX_EXECUTION_TIME, temp_file)
+        # 使用子进程执行 HPL 代码（带超时）
+        result = execute_hpl_in_subprocess(temp_file, MAX_EXECUTION_TIME)
+        
+        # 处理错误信息，尝试提取行号
+        if not result['success'] and result.get('traceback'):
+            import re
+            # 尝试从 traceback 中提取行号
+            line_match = re.search(r'line (\d+)', result['traceback'])
+            if line_match:
+                result['line'] = int(line_match.group(1))
+        
         return jsonify(result)
         
     except TimeoutException as e:
@@ -338,18 +473,18 @@ def run_code():
         if temp_dir and os.path.exists(temp_dir):
             try:
                 import shutil
-                shutil.rmtree(temp_dir)
+                shutil.rmtree(temp_dir, ignore_errors=True)
                 logger.info(f"清理临时目录: {temp_dir}")
             except Exception as e:
                 logger.error(f"清理临时目录失败: {temp_dir}, 错误: {e}")
 
 
 
+
 def execute_hpl(file_path):
     """
-    执行 HPL 文件
+    执行 HPL 文件（旧方法，保留用于兼容性）
     使用 hpl_runtime 执行代码
-    在受限环境中运行
     """
     try:
         # 方法1: 直接导入执行
@@ -532,9 +667,10 @@ def health_check():
     return jsonify({
         'status': 'ok',
         'message': 'HPL IDE Server is running',
-        'version': '1.1.0',
+        'version': '1.2.0',
         'max_execution_time': MAX_EXECUTION_TIME,
-        'max_request_size': MAX_REQUEST_SIZE
+        'max_request_size': MAX_REQUEST_SIZE,
+        'sandbox_mode': 'subprocess'
     })
 
 
@@ -564,13 +700,14 @@ def serve_css(filename):
 
 def main():
     print("=" * 60)
-    print("HPL IDE Server v1.1.0")
+    print("HPL IDE Server v1.2.0")
     print("=" * 60)
     print("安全特性:")
     print(f"  - 执行超时: {MAX_EXECUTION_TIME} 秒")
     print(f"  - 请求大小限制: {MAX_REQUEST_SIZE} bytes")
     print("  - 路径遍历防护: 已启用")
     print("  - CORS 限制: 已启用")
+    print("  - 子进程隔离: 已启用")
     print("-" * 60)
     print("功能状态:")
     print(f"  - 代码执行: {'可用' if hpl_runtime_available else '不可用 (未安装 hpl-runtime)'}")
