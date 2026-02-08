@@ -17,7 +17,8 @@ const HPLFileManager = {
     fileTreeData: null,
     
     // 展开的文件夹集合
-    expandedFolders: new Set(['examples']),
+    expandedFolders: new Set(['workspace']),
+
     
     // 当前选中的文件树项
     selectedTreeItem: null,
@@ -148,8 +149,9 @@ call: main()
                     el.classList.remove('active');
                 });
                 this.selectedTreeItem = null;
-                // 显示空白区域的上下文菜单，默认使用 examples 路径
-                this.showContextMenu(e.clientX, e.clientY, null, 'examples');
+                // 显示空白区域的上下文菜单，默认使用空路径（表示examples根目录）
+                this.showContextMenu(e.clientX, e.clientY, null, '');
+
             }
         });
 
@@ -258,7 +260,8 @@ call: main()
             const files = e.target.files;
             if (!files.length) return;
             
-            const targetPath = uploadInput.dataset.targetPath || 'examples';
+            const targetPath = uploadInput.dataset.targetPath || 'workspace';
+
             
             for (const file of files) {
                 try {
@@ -310,10 +313,13 @@ call: main()
     handleUpload(targetPath) {
         const uploadInput = document.getElementById('file-upload-input');
         if (uploadInput) {
-            uploadInput.dataset.targetPath = targetPath;
+            // 处理根目录情况（targetPath为空时）
+            uploadInput.dataset.targetPath = targetPath || 'workspace';
+
             uploadInput.click();
         }
     },
+
 
 
     /**
@@ -379,7 +385,8 @@ call: main()
         if (uploadItem) uploadItem.style.display = isFolder ? 'block' : 'none';
         
         // 存储默认路径（用于空白区域）
-        this.contextMenu.dataset.defaultPath = defaultPath || (item ? item.dataset.path : 'examples');
+        this.contextMenu.dataset.defaultPath = defaultPath !== null ? defaultPath : (item ? item.dataset.path : '');
+
         
         // 定位菜单
         this.contextMenu.style.left = `${x}px`;
@@ -409,10 +416,11 @@ call: main()
             path = this.selectedTreeItem.dataset.path;
             isFolder = this.selectedTreeItem.classList.contains('folder');
         } else {
-            // 空白区域右键时，使用默认路径（通常是 'examples'）
-            path = this.contextMenu.dataset.defaultPath || 'examples';
+            // 空白区域右键时，使用默认路径（空字符串表示examples根目录）
+            path = this.contextMenu.dataset.defaultPath || '';
             isFolder = true; // 默认视为文件夹上下文
         }
+
         
         switch (action) {
             case 'upload':
@@ -518,7 +526,9 @@ call: main()
             return;
         }
         
-        const fullPath = `${folderPath}/${filename}`;
+        // 处理根目录情况（folderPath为空时）
+        const fullPath = folderPath ? `${folderPath}/${filename}` : filename;
+
         
         try {
             await HPLAPI.createFile(fullPath, '');
@@ -544,7 +554,9 @@ call: main()
             return;
         }
         
-        const fullPath = `${parentPath}/${folderName}`;
+        // 处理根目录情况（parentPath为空时）
+        const fullPath = parentPath ? `${parentPath}/${folderName}` : folderName;
+
         
         try {
             await HPLAPI.createFolder(fullPath);

@@ -12,7 +12,7 @@ MAX_EXECUTION_TIME = 5  # 5秒
 # 路径配置
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, '..'))
-ALLOWED_EXAMPLES_DIR = os.path.abspath(os.path.join(PROJECT_ROOT, 'examples'))
+ALLOWED_EXAMPLES_DIR = os.path.abspath(os.path.join(PROJECT_ROOT, 'workspace'))  # 改为workspace目录
 
 # CORS配置
 CORS_ORIGINS = [
