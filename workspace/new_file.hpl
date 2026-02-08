@@ -1,0 +1,14 @@
+classes:
+  Main:
+    main: () => {
+        echo "Hello, HPL!"
+      }
+
+objects:
+  app: Main()
+
+main: () => {
+    app.main()
+  }
+
+call: main()

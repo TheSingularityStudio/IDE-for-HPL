@@ -267,6 +267,70 @@ def register_api_routes(app: Flask):
                 'error': str(e)
             })
 
+    @app.route('/api/files/read', methods=['GET'])
+    def read_file():
+        """
+        读取文件内容
+        支持 workspace 和 examples 目录
+        """
+        try:
+            path = request.args.get('path', '')
+            mode = request.args.get('mode', 'workspace')
+            
+            if not path:
+                return jsonify({
+                    'success': False,
+                    'error': '文件路径不能为空'
+                })
+            
+            # 安全检查：防止目录遍历
+            if not is_safe_filename(os.path.basename(path)):
+                logger.warning(f"非法文件名尝试: {path}")
+                return jsonify({
+                    'success': False,
+                    'error': '无效的文件名'
+                })
+            
+            # 根据模式选择基础路径
+            base_path = get_base_path(mode)
+            
+            # 构建完整路径并验证
+            file_path = os.path.join(base_path, path)
+            validated_path = validate_path(file_path, base_path)
+            
+            if not validated_path:
+                return jsonify({
+                    'success': False,
+                    'error': '无效的文件路径'
+                })
+            
+            # 检查文件是否存在
+            if not os.path.exists(validated_path) or not os.path.isfile(validated_path):
+                return jsonify({
+                    'success': False,
+                    'error': '文件不存在'
+                })
+            
+            # 读取文件内容
+            with open(validated_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            logger.info(f"读取文件: {validated_path}")
+            return jsonify({
+                'success': True,
+                'content': content,
+                'name': os.path.basename(path),
+                'path': path
+            })
+            
+        except Exception as e:
+            logger.error(f"读取文件错误: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            })
+
+
     @app.route('/api/files/create', methods=['POST'])
     def create_file():
         """

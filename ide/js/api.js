@@ -124,6 +124,34 @@ const HPLAPI = {
         return result.tree;
     },
 
+    /**
+     * 读取文件内容
+     * @param {string} path - 文件路径
+     * @param {string} mode - 'workspace' 或 'examples'
+     */
+    async readFile(path, mode = 'workspace') {
+        if (!path) {
+            throw new Error('文件路径不能为空');
+        }
+        
+        const response = await fetch(
+            HPLConfig.buildApiUrl(`/files/read?path=${encodeURIComponent(path)}&mode=${encodeURIComponent(mode)}`)
+        );
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '读取文件失败');
+        }
+        
+        return result;
+    },
+
+
 
     /**
      * 创建新文件

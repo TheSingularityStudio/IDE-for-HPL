@@ -192,10 +192,10 @@ call: main()
                 this.toggleFolder(path);
             } else {
                 // 打开文件
-                const filename = path.split('/').pop();
-                HPLApp.loadExample(filename);
+                this.openFileFromTree(path);
             }
         });
+
         
         // 右键菜单 - 支持文件项和空白区域
         fileTree.addEventListener('contextmenu', (e) => {
@@ -584,30 +584,120 @@ call: main()
      * 创建新文件
      */
     async createNewFile(folderPath) {
-        const filename = prompt('请输入文件名（包含扩展名）：', 'new_file.hpl');
+        let filename = prompt('请输入文件名（包含扩展名）：', 'new_file.hpl');
         if (!filename) return;
+        
+        // 自动添加 .hpl 扩展名
+        if (!filename.includes('.')) {
+            filename += '.hpl';
+        }
         
         if (!HPLUtils.isValidFilename(filename)) {
             HPLUI.showOutput('错误：文件名无效', 'error');
             return;
         }
         
-        // 处理根目录情况（folderPath为根目录名时）
-        const fullPath = folderPath === this.currentMode ? `${folderPath}/${filename}` : 
-                        (folderPath ? `${folderPath}/${filename}` : filename);
+        // 确保是 .hpl 文件
+        if (!filename.endsWith('.hpl')) {
+            HPLUI.showOutput('错误：请创建 .hpl 文件', 'error');
+            return;
+        }
+        
+        // 处理路径：API需要相对于模式根目录的路径（不包含workspace/前缀）
+        let relativePath;
+        if (!folderPath || folderPath === this.currentMode) {
+            // 在根目录创建，直接使用文件名
+            relativePath = filename;
+        } else if (folderPath.startsWith(this.currentMode + '/')) {
+            // 完整路径包含模式前缀，去掉前缀后拼接
+            const subPath = folderPath.substring(this.currentMode.length + 1);
+            relativePath = subPath ? `${subPath}/${filename}` : filename;
+        } else {
+            // 其他情况，假设是相对路径
+            relativePath = `${folderPath}/${filename}`;
+        }
         
         try {
-            await HPLAPI.createFile(fullPath, '', this.currentMode);
+            // 检查文件是否已存在
+            const tree = this.fileTreeData;
+            const checkExists = (node, targetName) => {
+                if (node.children) {
+                    for (const child of node.children) {
+                        if (child.name === targetName && child.type === 'file') {
+                            return true;
+                        }
+                        if (child.children && checkExists(child, targetName)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+            
+            const targetFolder = (!folderPath || folderPath === this.currentMode) ? tree : 
+                this.findNodeInTree(tree, folderPath);
+            
+            if (targetFolder && checkExists(targetFolder, filename)) {
+                const overwrite = confirm(`文件 "${filename}" 已存在，是否覆盖？`);
+                if (!overwrite) return;
+            }
+            
+            await HPLAPI.createFile(relativePath, this.DEFAULT_CONTENT, this.currentMode);
 
             HPLUI.showOutput(`✅ 文件已创建: ${filename}`, 'success');
-            HPLApp.refreshFileTree();
             
-            // 自动打开新文件
-            HPLApp.loadExample(filename);
+            // 先刷新文件树，等待完成
+            await HPLApp.refreshFileTree();
+            
+            // 展开父文件夹
+            if (folderPath && folderPath !== this.currentMode) {
+                this.expandedFolders.add(folderPath);
+                this.renderFileTree();
+            }
+            
+            // 使用正确的文件打开方式
+            this.openFileInEditor(relativePath, this.DEFAULT_CONTENT, true);
         } catch (error) {
             HPLUI.showOutput('创建文件失败: ' + error.message, 'error');
         }
     },
+
+
+    /**
+     * 在文件树中查找节点
+     */
+    findNodeInTree(tree, path) {
+        if (tree.path === path) return tree;
+        if (tree.children) {
+            for (const child of tree.children) {
+                const found = this.findNodeInTree(child, path);
+                if (found) return found;
+            }
+        }
+        return null;
+    },
+
+    /**
+     * 从文件树打开文件
+     * @param {string} path - 文件路径
+     */
+    async openFileFromTree(path) {
+        try {
+            HPLUI.showOutput(`正在打开 ${path}...`, 'info');
+            
+            // 使用新的 readFile API 读取文件内容
+            const result = await HPLAPI.readFile(path, this.currentMode);
+            
+            // 在编辑器中打开文件
+            this.openFileInEditor(path, result.content, false);
+            
+            HPLUI.showOutput(`✅ 已打开: ${path}`, 'success');
+        } catch (error) {
+            HPLUI.showOutput('无法打开文件: ' + error.message, 'error');
+        }
+    },
+
+
 
     /**
      * 创建新文件夹
@@ -700,13 +790,17 @@ call: main()
             return;
         }
         
-        this.renderTreeNode(fileTree, data, 0);
+        // 不显示根节点（workspace/examples），直接渲染其子项
+        data.children.forEach(child => {
+            this.renderTreeNode(fileTree, child, 0);
+        });
         
         // 如果有搜索结果，高亮它们
         if (this.searchState.results.length > 0) {
             this.highlightSearchResults();
         }
     },
+
 
     /**
      * 渲染空状态
