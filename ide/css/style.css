@@ -803,6 +803,84 @@ kbd {
     border: 0;
 }
 
+/* 上下文菜单 */
+.context-menu {
+    position: fixed;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    z-index: 1000;
+    min-width: 160px;
+    padding: 4px 0;
+}
+
+.context-menu.hidden {
+    display: none;
+}
+
+.context-menu-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-primary);
+    transition: background-color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.context-menu-item:hover {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.context-menu-separator {
+    height: 1px;
+    background-color: var(--border-color);
+    margin: 4px 0;
+}
+
+/* 文件树增强样式 */
+.file-item.folder {
+    font-weight: 500;
+}
+
+.file-item.folder.expanded > .folder-icon {
+    transform: rotate(0deg);
+}
+
+.file-item.folder > .folder-icon {
+    display: inline-block;
+    transition: transform 0.15s;
+}
+
+.file-item.file {
+    color: var(--text-primary);
+}
+
+.file-item.loading {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.file-item.error {
+    color: var(--error-color);
+}
+
+/* 空文件夹提示 */
+.file-tree-empty {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+/* 工具提示 */
+.file-item[title] {
+    position: relative;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
 
@@ -816,5 +894,9 @@ kbd {
     
     .sidebar.open {
         left: 0;
+    }
+    
+    .context-menu {
+        max-width: 200px;
     }
 }

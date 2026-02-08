@@ -1,6 +1,6 @@
 /**
  * HPL IDE - 文件管理模块
- * 管理文件操作、标签页、自动保存
+ * 管理文件操作、标签页、自动保存、文件树
  */
 
 const HPLFileManager = {
@@ -12,6 +12,18 @@ const HPLFileManager = {
     
     // 自动保存定时器
     autoSaveInterval: null,
+    
+    // 文件树数据
+    fileTreeData: null,
+    
+    // 展开的文件夹集合
+    expandedFolders: new Set(['examples']),
+    
+    // 当前选中的文件树项
+    selectedTreeItem: null,
+    
+    // 上下文菜单元素
+    contextMenu: null,
     
     // 默认文件名
     DEFAULT_FILENAME: 'untitled.hpl',
@@ -33,12 +45,358 @@ main: () => {
 call: main()
 `,
 
+
     /**
      * 初始化文件管理器
      */
     init() {
         this.initAutoSave();
+        this.initContextMenu();
+        this.initFileTreeEvents();
     },
+
+    /**
+     * 初始化上下文菜单
+     */
+    initContextMenu() {
+        // 创建上下文菜单元素
+        this.contextMenu = document.createElement('div');
+        this.contextMenu.className = 'context-menu hidden';
+        this.contextMenu.innerHTML = `
+            <div class="context-menu-item" data-action="new-file">📄 新建文件</div>
+            <div class="context-menu-item" data-action="new-folder">📁 新建文件夹</div>
+            <div class="context-menu-separator"></div>
+            <div class="context-menu-item" data-action="rename">✏️ 重命名</div>
+            <div class="context-menu-item" data-action="delete">🗑️ 删除</div>
+            <div class="context-menu-separator"></div>
+            <div class="context-menu-item" data-action="refresh">🔄 刷新</div>
+        `;
+        document.body.appendChild(this.contextMenu);
+        
+        // 绑定菜单项点击事件
+        this.contextMenu.addEventListener('click', (e) => {
+            const item = e.target.closest('.context-menu-item');
+            if (item) {
+                this.handleContextMenuAction(item.dataset.action);
+            }
+        });
+        
+        // 点击其他地方关闭菜单
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.context-menu')) {
+                this.hideContextMenu();
+            }
+        });
+    },
+
+    /**
+     * 初始化文件树事件
+     */
+    initFileTreeEvents() {
+        const fileTree = document.getElementById('file-tree');
+        if (!fileTree) return;
+        
+        // 点击事件处理
+        fileTree.addEventListener('click', (e) => {
+            const item = e.target.closest('.file-item');
+            if (!item) return;
+            
+            const path = item.dataset.path;
+            const isFolder = item.classList.contains('folder');
+            
+            // 更新选中状态
+            this.selectTreeItem(item);
+            
+            if (isFolder) {
+                // 切换文件夹展开/折叠
+                this.toggleFolder(path);
+            } else {
+                // 打开文件
+                const filename = path.split('/').pop();
+                HPLApp.loadExample(filename);
+            }
+        });
+        
+        // 右键菜单
+        fileTree.addEventListener('contextmenu', (e) => {
+            const item = e.target.closest('.file-item');
+            if (item) {
+                e.preventDefault();
+                this.selectTreeItem(item);
+                this.showContextMenu(e.clientX, e.clientY, item);
+            }
+        });
+    },
+
+    /**
+     * 选中文件树项
+     */
+    selectTreeItem(item) {
+        // 移除之前的选中状态
+        document.querySelectorAll('.file-item.active').forEach(el => {
+            el.classList.remove('active');
+        });
+        
+        // 添加新的选中状态
+        item.classList.add('active');
+        this.selectedTreeItem = item;
+    },
+
+    /**
+     * 切换文件夹展开/折叠
+     */
+    toggleFolder(path) {
+        const item = document.querySelector(`.file-item[data-path="${CSS.escape(path)}"]`);
+        if (!item || !item.classList.contains('folder')) return;
+        
+        if (this.expandedFolders.has(path)) {
+            this.expandedFolders.delete(path);
+            item.classList.remove('expanded');
+        } else {
+            this.expandedFolders.add(path);
+            item.classList.add('expanded');
+        }
+        
+        // 重新渲染文件树
+        this.renderFileTree();
+    },
+
+    /**
+     * 显示上下文菜单
+     */
+    showContextMenu(x, y, item) {
+        const isFolder = item.classList.contains('folder');
+        
+        // 根据类型显示/隐藏菜单项
+        const newFileItem = this.contextMenu.querySelector('[data-action="new-file"]');
+        const newFolderItem = this.contextMenu.querySelector('[data-action="new-folder"]');
+        
+        if (newFileItem) newFileItem.style.display = isFolder ? 'block' : 'none';
+        if (newFolderItem) newFolderItem.style.display = isFolder ? 'block' : 'none';
+        
+        // 定位菜单
+        this.contextMenu.style.left = `${x}px`;
+        this.contextMenu.style.top = `${y}px`;
+        this.contextMenu.classList.remove('hidden');
+    },
+
+    /**
+     * 隐藏上下文菜单
+     */
+    hideContextMenu() {
+        this.contextMenu.classList.add('hidden');
+    },
+
+    /**
+     * 处理上下文菜单操作
+     */
+    handleContextMenuAction(action) {
+        this.hideContextMenu();
+        
+        if (!this.selectedTreeItem) return;
+        
+        const path = this.selectedTreeItem.dataset.path;
+        const isFolder = this.selectedTreeItem.classList.contains('folder');
+        
+        switch (action) {
+            case 'new-file':
+                if (isFolder) this.createNewFile(path);
+                break;
+            case 'new-folder':
+                if (isFolder) this.createNewFolder(path);
+                break;
+            case 'rename':
+                this.renameItem(path, isFolder);
+                break;
+            case 'delete':
+                this.deleteItem(path, isFolder);
+                break;
+            case 'refresh':
+                HPLApp.refreshFileTree();
+                break;
+        }
+    },
+
+    /**
+     * 创建新文件
+     */
+    async createNewFile(folderPath) {
+        const filename = prompt('请输入文件名（包含扩展名）：', 'new_file.hpl');
+        if (!filename) return;
+        
+        if (!HPLUtils.isValidFilename(filename)) {
+            HPLUI.showOutput('错误：文件名无效', 'error');
+            return;
+        }
+        
+        const fullPath = `${folderPath}/${filename}`;
+        
+        try {
+            await HPLAPI.createFile(fullPath, '');
+            HPLUI.showOutput(`✅ 文件已创建: ${filename}`, 'success');
+            HPLApp.refreshFileTree();
+            
+            // 自动打开新文件
+            HPLApp.loadExample(filename);
+        } catch (error) {
+            HPLUI.showOutput('创建文件失败: ' + error.message, 'error');
+        }
+    },
+
+    /**
+     * 创建新文件夹
+     */
+    async createNewFolder(parentPath) {
+        const folderName = prompt('请输入文件夹名称：', 'new_folder');
+        if (!folderName) return;
+        
+        if (!HPLUtils.isValidFilename(folderName)) {
+            HPLUI.showOutput('错误：文件夹名称无效', 'error');
+            return;
+        }
+        
+        const fullPath = `${parentPath}/${folderName}`;
+        
+        try {
+            await HPLAPI.createFolder(fullPath);
+            HPLUI.showOutput(`✅ 文件夹已创建: ${folderName}`, 'success');
+            
+            // 自动展开父文件夹
+            this.expandedFolders.add(parentPath);
+            HPLApp.refreshFileTree();
+        } catch (error) {
+            HPLUI.showOutput('创建文件夹失败: ' + error.message, 'error');
+        }
+    },
+
+    /**
+     * 重命名文件或文件夹
+     */
+    async renameItem(path, isFolder) {
+        const oldName = path.split('/').pop();
+        const newName = prompt(`请输入新名称：`, oldName);
+        if (!newName || newName === oldName) return;
+        
+        if (!HPLUtils.isValidFilename(newName)) {
+            HPLUI.showOutput('错误：名称无效', 'error');
+            return;
+        }
+        
+        const parentPath = path.substring(0, path.lastIndexOf('/'));
+        const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+        
+        try {
+            await HPLAPI.renameItem(path, newPath);
+            HPLUI.showOutput(`✅ 已重命名为: ${newName}`, 'success');
+            HPLApp.refreshFileTree();
+        } catch (error) {
+            HPLUI.showOutput('重命名失败: ' + error.message, 'error');
+        }
+    },
+
+    /**
+     * 删除文件或文件夹
+     */
+    async deleteItem(path, isFolder) {
+        const itemType = isFolder ? '文件夹' : '文件';
+        const itemName = path.split('/').pop();
+        
+        if (!confirm(`确定要删除${itemType} "${itemName}" 吗？${isFolder ? '文件夹中的所有内容都将被删除！' : ''}`)) {
+            return;
+        }
+        
+        try {
+            await HPLAPI.deleteItem(path);
+            HPLUI.showOutput(`✅ ${itemType}已删除: ${itemName}`, 'success');
+            HPLApp.refreshFileTree();
+        } catch (error) {
+            HPLUI.showOutput('删除失败: ' + error.message, 'error');
+        }
+    },
+
+    /**
+     * 渲染文件树
+     */
+    renderFileTree(data = this.fileTreeData) {
+        const fileTree = document.getElementById('file-tree');
+        if (!fileTree || !data) return;
+        
+        fileTree.innerHTML = '';
+        this.renderTreeNode(fileTree, data, 0);
+    },
+
+    /**
+     * 递归渲染树节点
+     */
+    renderTreeNode(container, node, level) {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        item.dataset.path = node.path;
+        item.style.paddingLeft = `${12 + level * 16}px`;
+        
+        // 判断是否为文件夹
+        const isFolder = node.type === 'folder' || (node.children && node.children.length > 0);
+        
+        if (isFolder) {
+            item.classList.add('folder');
+            if (this.expandedFolders.has(node.path)) {
+                item.classList.add('expanded');
+            }
+            
+            const isExpanded = this.expandedFolders.has(node.path);
+            const icon = isExpanded ? '📂' : '📁';
+            
+            item.innerHTML = `
+                <span class="file-icon folder-icon">${icon}</span>
+                <span class="file-name">${HPLUtils.escapeHtml(node.name)}</span>
+            `;
+            
+            container.appendChild(item);
+            
+            // 递归渲染子项
+            if (isExpanded && node.children) {
+                node.children.forEach(child => {
+                    this.renderTreeNode(container, child, level + 1);
+                });
+            }
+        } else {
+            item.classList.add('file');
+            
+            // 根据文件扩展名选择图标
+            const ext = node.name.split('.').pop().toLowerCase();
+            const iconMap = {
+                'hpl': '📄',
+                'py': '🐍',
+                'md': '📝',
+                'txt': '📃',
+                'json': '📋',
+                'yaml': '⚙️',
+                'yml': '⚙️'
+            };
+            const icon = iconMap[ext] || '📄';
+            
+            item.innerHTML = `
+                <span class="file-icon">${icon}</span>
+                <span class="file-name">${HPLUtils.escapeHtml(node.name)}</span>
+            `;
+            
+            // 高亮当前打开的文件
+            if (this.currentFile === node.name) {
+                item.classList.add('active');
+            }
+            
+            container.appendChild(item);
+        }
+    },
+
+    /**
+     * 设置文件树数据
+     */
+    setFileTreeData(data) {
+        this.fileTreeData = data;
+        this.renderFileTree();
+    },
+
 
     /**
      * 初始化自动保存
@@ -341,8 +699,22 @@ call: main()
      */
     getOpenFiles() {
         return Array.from(this.openFiles.keys());
+    },
+
+    /**
+     * 高亮文件树中的文件
+     */
+    highlightFileInTree(filename) {
+        document.querySelectorAll('.file-item.file').forEach(item => {
+            const path = item.dataset.path;
+            const itemFilename = path ? path.split('/').pop() : '';
+            if (itemFilename === filename) {
+                this.selectTreeItem(item);
+            }
+        });
     }
 };
+
 
 // 导出模块
 if (typeof module !== 'undefined' && module.exports) {

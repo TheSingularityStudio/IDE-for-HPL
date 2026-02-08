@@ -163,22 +163,14 @@ const HPLApp = {
 
     /**
      * 绑定文件树事件
+     * 注意：主要事件处理已移至 HPLFileManager.initFileTreeEvents()
+     * 这里保留一些额外的应用级别处理
      */
     bindFileTreeEvents() {
-        const fileTree = document.getElementById('file-tree');
-        if (fileTree) {
-            fileTree.addEventListener('click', (e) => {
-                const item = e.target.closest('.file-item');
-                if (!item) return;
-                
-                const path = item.dataset.path;
-                if (path && !item.classList.contains('folder')) {
-                    const filename = path.split('/').pop();
-                    this.loadExample(filename);
-                }
-            });
-        }
+        // 文件树事件主要由 HPLFileManager 处理
+        // 这里可以添加额外的应用级别事件
     },
+
 
     /**
      * 绑定欢迎页面事件
@@ -191,7 +183,26 @@ const HPLApp = {
         if (actionNew) actionNew.addEventListener('click', () => HPLFileManager.newFile());
         if (actionOpen) actionOpen.addEventListener('click', () => document.getElementById('file-input')?.click());
         if (actionExample) actionExample.addEventListener('click', () => this.loadExample('example.hpl'));
+
+        // 绑定欢迎标签页点击事件
+        const welcomeTab = document.querySelector('.tab[data-file="welcome"]');
+        if (welcomeTab) {
+            welcomeTab.addEventListener('click', () => {
+                // 清除所有标签页的激活状态
+                document.querySelectorAll('.tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                // 激活欢迎标签页
+                welcomeTab.classList.add('active');
+                // 显示欢迎页面
+                HPLUI.showWelcomePage();
+                // 清空当前文件状态
+                HPLFileManager.currentFile = null;
+                HPLUI.updateFileInfo('未选择文件', false);
+            });
+        }
     },
+
 
     /**
      * 运行代码
@@ -260,40 +271,40 @@ const HPLApp = {
         fileTree.innerHTML = '<div class="file-item loading">⏳ 加载中...</div>';
         
         try {
-            const examples = await HPLAPI.listExamples();
+            // 使用新的文件树 API
+            const treeData = await HPLAPI.getFileTree();
             
-            // 清空现有内容
-            fileTree.innerHTML = '';
+            // 设置文件树数据并渲染
+            HPLFileManager.setFileTreeData(treeData);
             
-            // 添加文件夹节点
-            const folderDiv = document.createElement('div');
-            folderDiv.className = 'file-item folder expanded';
-            folderDiv.dataset.path = 'examples';
-            folderDiv.innerHTML = '<span class="file-icon">📂</span><span class="file-name">examples</span>';
-            fileTree.appendChild(folderDiv);
-            
-            // 添加所有示例文件
-            examples.forEach(example => {
-                const fileDiv = document.createElement('div');
-                fileDiv.className = 'file-item file';
-                fileDiv.dataset.path = `examples/${example.name}`;
-                fileDiv.style.paddingLeft = '20px';
-                fileDiv.innerHTML = `
-                    <span class="file-icon">📄</span>
-                    <span class="file-name">${HPLUtils.escapeHtml(example.name)}</span>
-                `;
-                fileTree.appendChild(fileDiv);
-            });
-            
-            console.log(`文件树已刷新，共 ${examples.length} 个文件`);
+            console.log('文件树已刷新');
             HPLUI.hideLoading();
         } catch (error) {
             console.error('刷新文件树失败:', error);
-            fileTree.innerHTML = `<div class="file-item error">❌ 加载失败: ${HPLUtils.escapeHtml(error.message)}</div>`;
-            HPLUI.showOutput('刷新文件树失败: ' + error.message, 'error');
-            HPLUI.hideLoading();
+            // 如果新 API 失败，回退到旧 API
+            try {
+                const examples = await HPLAPI.listExamples();
+                const treeData = {
+                    name: 'examples',
+                    path: 'examples',
+                    type: 'folder',
+                    children: examples.map(ex => ({
+                        name: ex.name,
+                        path: `examples/${ex.name}`,
+                        type: 'file',
+                        size: ex.size
+                    }))
+                };
+                HPLFileManager.setFileTreeData(treeData);
+                HPLUI.hideLoading();
+            } catch (fallbackError) {
+                fileTree.innerHTML = `<div class="file-item error">❌ 加载失败: ${HPLUtils.escapeHtml(error.message)}</div>`;
+                HPLUI.showOutput('刷新文件树失败: ' + error.message, 'error');
+                HPLUI.hideLoading();
+            }
         }
     },
+
 
     /**
      * 加载示例文件
@@ -304,11 +315,16 @@ const HPLApp = {
         try {
             const result = await HPLAPI.loadExample(filename);
             HPLFileManager.openFileInEditor(filename, result.content, false);
+            
+            // 在文件树中高亮该文件
+            HPLFileManager.highlightFileInTree(filename);
+            
             HPLUI.showOutput(`✅ 已加载: ${filename}`, 'success');
         } catch (error) {
             HPLUI.showOutput('无法加载示例文件: ' + error.message, 'error');
         }
     },
+
 
     /**
      * 显示配置对话框

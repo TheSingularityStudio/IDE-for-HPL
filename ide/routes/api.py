@@ -186,6 +186,352 @@ def register_api_routes(app: Flask):
                 'error': str(e)
             })
 
+    @app.route('/api/files/tree', methods=['GET'])
+    def get_file_tree():
+        """
+        获取文件树结构
+        递归扫描 examples 目录
+        """
+        def build_tree(path, base_path):
+            """
+            递归构建文件树
+            """
+            try:
+                rel_path = os.path.relpath(path, base_path)
+                name = os.path.basename(path)
+                
+                if os.path.isdir(path):
+                    children = []
+                    try:
+                        for item in sorted(os.listdir(path)):
+                            # 跳过隐藏文件和 __pycache__
+                            if item.startswith('.') or item == '__pycache__':
+                                continue
+                            
+                            item_path = os.path.join(path, item)
+                            validated = validate_path(item_path, base_path)
+                            if validated:
+                                child_node = build_tree(validated, base_path)
+                                if child_node:
+                                    children.append(child_node)
+                    except (OSError, PermissionError) as e:
+                        logger.warning(f"无法读取目录 {path}: {e}")
+                    
+                    return {
+                        'name': name,
+                        'path': rel_path.replace('\\', '/'),
+                        'type': 'folder',
+                        'children': children
+                    }
+                else:
+                    # 文件节点
+                    return {
+                        'name': name,
+                        'path': rel_path.replace('\\', '/'),
+                        'type': 'file',
+                        'size': os.path.getsize(path)
+                    }
+            except Exception as e:
+                logger.error(f"构建文件树错误 {path}: {e}")
+                return None
+        
+        try:
+            if not os.path.exists(ALLOWED_EXAMPLES_DIR):
+                return jsonify({
+                    'success': False,
+                    'error': '示例目录不存在'
+                })
+            
+            tree = build_tree(ALLOWED_EXAMPLES_DIR, ALLOWED_EXAMPLES_DIR)
+            
+            return jsonify({
+                'success': True,
+                'tree': tree
+            })
+        except Exception as e:
+            logger.error(f"获取文件树错误: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            })
+
+    @app.route('/api/files/create', methods=['POST'])
+    def create_file():
+        """
+        创建新文件
+        """
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'error': '请求数据不能为空'
+                })
+            
+            path = data.get('path', '')
+            content = data.get('content', '')
+            
+            if not path:
+                return jsonify({
+                    'success': False,
+                    'error': '文件路径不能为空'
+                })
+            
+            # 安全检查
+            if not is_safe_filename(os.path.basename(path)):
+                return jsonify({
+                    'success': False,
+                    'error': '无效的文件名'
+                })
+            
+            # 构建完整路径并验证
+            full_path = os.path.join(ALLOWED_EXAMPLES_DIR, path)
+            validated_path = validate_path(full_path, ALLOWED_EXAMPLES_DIR)
+            
+            if not validated_path:
+                return jsonify({
+                    'success': False,
+                    'error': '无效的文件路径'
+                })
+            
+            # 检查文件是否已存在
+            if os.path.exists(validated_path):
+                return jsonify({
+                    'success': False,
+                    'error': '文件已存在'
+                })
+            
+            # 确保父目录存在
+            parent_dir = os.path.dirname(validated_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+            
+            # 创建文件
+            with open(validated_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            logger.info(f"创建文件: {validated_path}")
+            return jsonify({
+                'success': True,
+                'message': '文件创建成功',
+                'path': path
+            })
+            
+        except Exception as e:
+            logger.error(f"创建文件错误: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            })
+
+    @app.route('/api/folders/create', methods=['POST'])
+    def create_folder():
+        """
+        创建新文件夹
+        """
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'error': '请求数据不能为空'
+                })
+            
+            path = data.get('path', '')
+            
+            if not path:
+                return jsonify({
+                    'success': False,
+                    'error': '文件夹路径不能为空'
+                })
+            
+            # 安全检查
+            if not is_safe_filename(os.path.basename(path)):
+                return jsonify({
+                    'success': False,
+                    'error': '无效的文件夹名'
+                })
+            
+            # 构建完整路径并验证
+            full_path = os.path.join(ALLOWED_EXAMPLES_DIR, path)
+            validated_path = validate_path(full_path, ALLOWED_EXAMPLES_DIR)
+            
+            if not validated_path:
+                return jsonify({
+                    'success': False,
+                    'error': '无效的文件夹路径'
+                })
+            
+            # 检查是否已存在
+            if os.path.exists(validated_path):
+                return jsonify({
+                    'success': False,
+                    'error': '文件夹已存在'
+                })
+            
+            # 创建文件夹
+            os.makedirs(validated_path, exist_ok=True)
+            
+            logger.info(f"创建文件夹: {validated_path}")
+            return jsonify({
+                'success': True,
+                'message': '文件夹创建成功',
+                'path': path
+            })
+            
+        except Exception as e:
+            logger.error(f"创建文件夹错误: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            })
+
+    @app.route('/api/files/rename', methods=['POST'])
+    def rename_item():
+        """
+        重命名文件或文件夹
+        """
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'error': '请求数据不能为空'
+                })
+            
+            old_path = data.get('oldPath', '')
+            new_path = data.get('newPath', '')
+            
+            if not old_path or not new_path:
+                return jsonify({
+                    'success': False,
+                    'error': '旧路径和新路径都不能为空'
+                })
+            
+            # 安全检查
+            if not is_safe_filename(os.path.basename(new_path)):
+                return jsonify({
+                    'success': False,
+                    'error': '无效的新名称'
+                })
+            
+            # 构建完整路径并验证
+            full_old_path = os.path.join(ALLOWED_EXAMPLES_DIR, old_path)
+            full_new_path = os.path.join(ALLOWED_EXAMPLES_DIR, new_path)
+            
+            validated_old_path = validate_path(full_old_path, ALLOWED_EXAMPLES_DIR)
+            validated_new_path = validate_path(full_new_path, ALLOWED_EXAMPLES_DIR)
+            
+            if not validated_old_path:
+                return jsonify({
+                    'success': False,
+                    'error': '无效的旧路径'
+                })
+            
+            if not validated_new_path:
+                return jsonify({
+                    'success': False,
+                    'error': '无效的新路径'
+                })
+            
+            # 检查旧路径是否存在
+            if not os.path.exists(validated_old_path):
+                return jsonify({
+                    'success': False,
+                    'error': '要重命名的项目不存在'
+                })
+            
+            # 检查新路径是否已存在
+            if os.path.exists(validated_new_path):
+                return jsonify({
+                    'success': False,
+                    'error': '目标名称已存在'
+                })
+            
+            # 执行重命名
+            os.rename(validated_old_path, validated_new_path)
+            
+            logger.info(f"重命名: {validated_old_path} -> {validated_new_path}")
+            return jsonify({
+                'success': True,
+                'message': '重命名成功',
+                'oldPath': old_path,
+                'newPath': new_path
+            })
+            
+        except Exception as e:
+            logger.error(f"重命名错误: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            })
+
+    @app.route('/api/files/delete', methods=['DELETE'])
+    def delete_item():
+        """
+        删除文件或文件夹
+        """
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'error': '请求数据不能为空'
+                })
+            
+            path = data.get('path', '')
+            
+            if not path:
+                return jsonify({
+                    'success': False,
+                    'error': '路径不能为空'
+                })
+            
+            # 安全检查
+            if not is_safe_filename(os.path.basename(path)):
+                return jsonify({
+                    'success': False,
+                    'error': '无效的名称'
+                })
+            
+            # 构建完整路径并验证
+            full_path = os.path.join(ALLOWED_EXAMPLES_DIR, path)
+            validated_path = validate_path(full_path, ALLOWED_EXAMPLES_DIR)
+            
+            if not validated_path:
+                return jsonify({
+                    'success': False,
+                    'error': '无效的路径'
+                })
+            
+            # 检查是否存在
+            if not os.path.exists(validated_path):
+                return jsonify({
+                    'success': False,
+                    'error': '要删除的项目不存在'
+                })
+            
+            # 执行删除
+            if os.path.isdir(validated_path):
+                shutil.rmtree(validated_path)
+                logger.info(f"删除文件夹: {validated_path}")
+            else:
+                os.remove(validated_path)
+                logger.info(f"删除文件: {validated_path}")
+            
+            return jsonify({
+                'success': True,
+                'message': '删除成功',
+                'path': path
+            })
+            
+        except Exception as e:
+            logger.error(f"删除错误: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            })
+
     @app.route('/api/health', methods=['GET'])
     def health_check():
         """
