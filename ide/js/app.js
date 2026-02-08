@@ -200,11 +200,11 @@ const HPLApp = {
                 welcomeTab.classList.add('active');
                 // 显示欢迎页面
                 HPLUI.showWelcomePage();
-                // 清空当前文件状态
-                HPLFileManager.currentFile = null;
-                HPLUI.updateFileInfo('未选择文件', false);
+                // 注意：不要清空 currentFile，保持文件管理器状态
+                // 这样切换回其他标签时状态正常
             });
         }
+
     },
 
 

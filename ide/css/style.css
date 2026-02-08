@@ -229,7 +229,12 @@ body {
     border-bottom: 1px solid var(--border-color);
     overflow-x: auto;
     flex-shrink: 0;
+    position: relative;
+    z-index: 20;
 }
+
+
+
 
 .tab {
     display: flex;
@@ -285,11 +290,11 @@ body {
 
 /* 欢迎页面 */
 .welcome-page {
-    position: fixed;
-    top: var(--toolbar-height);
-    left: var(--sidebar-width);
+    position: absolute;
+    top: 0;
+    left: 0;
     right: 0;
-    bottom: calc(var(--statusbar-height) + var(--panel-height));
+    bottom: 0;
     background-color: var(--bg-primary);
     display: flex;
     align-items: center;
@@ -302,9 +307,10 @@ body {
 
 .welcome-content {
     max-width: 600px;
-    padding: 40px;
+    padding: 60px 40px 40px;
     text-align: center;
 }
+
 
 .welcome-content h1 {
     font-size: 48px;
