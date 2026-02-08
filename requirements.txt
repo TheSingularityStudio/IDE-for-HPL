@@ -1,0 +1,8 @@
+# HPL IDE 依赖项
+
+# HPL 运行时 - 用于执行 HPL 代码
+hpl-runtime>=1.0.0,<2.0.0
+
+# Web 框架
+flask>=2.0.0
+flask-cors>=4.0.0
