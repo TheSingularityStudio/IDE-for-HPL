@@ -15,6 +15,11 @@ PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, '..'))
 ALLOWED_WORKSPACE_DIR = os.path.abspath(os.path.join(PROJECT_ROOT, 'workspace'))  # 工作区目录
 ALLOWED_EXAMPLES_DIR = os.path.abspath(os.path.join(PROJECT_ROOT, 'examples'))  # 示例脚本目录
 
+# 备份配置
+BACKUP_DIR = os.path.abspath(os.path.join(ALLOWED_WORKSPACE_DIR, '.backups'))  # 备份目录
+MAX_BACKUP_COUNT = 10  # 每个文件最大备份数量
+
+
 
 # CORS配置
 CORS_ORIGINS = [

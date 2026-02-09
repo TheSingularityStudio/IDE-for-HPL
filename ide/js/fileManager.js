@@ -146,12 +146,16 @@ call: main()
             <div class="context-menu-item" data-action="new-file">📄 新建文件</div>
             <div class="context-menu-item" data-action="new-folder">📁 新建文件夹</div>
             <div class="context-menu-separator"></div>
+            <div class="context-menu-item" data-action="backup">💾 创建备份</div>
+            <div class="context-menu-item" data-action="view-backups">📋 查看备份</div>
+            <div class="context-menu-separator"></div>
             <div class="context-menu-item" data-action="rename">✏️ 重命名</div>
             <div class="context-menu-item" data-action="delete">🗑️ 删除</div>
             <div class="context-menu-separator"></div>
             <div class="context-menu-item" data-action="refresh">🔄 刷新</div>
         `;
         document.body.appendChild(this.contextMenu);
+
         
         // 绑定菜单项点击事件
         this.contextMenu.addEventListener('click', (e) => {
@@ -435,6 +439,8 @@ call: main()
         // 根据类型显示/隐藏菜单项
         const newFileItem = this.contextMenu.querySelector('[data-action="new-file"]');
         const newFolderItem = this.contextMenu.querySelector('[data-action="new-folder"]');
+        const backupItem = this.contextMenu.querySelector('[data-action="backup"]');
+        const viewBackupsItem = this.contextMenu.querySelector('[data-action="view-backups"]');
         const renameItem = this.contextMenu.querySelector('[data-action="rename"]');
         const deleteItem = this.contextMenu.querySelector('[data-action="delete"]');
         const uploadItem = this.contextMenu.querySelector('[data-action="upload"]');
@@ -443,21 +449,25 @@ call: main()
         if (newFileItem) newFileItem.style.display = isFolder ? 'block' : 'none';
         if (newFolderItem) newFolderItem.style.display = isFolder ? 'block' : 'none';
         
+        // 备份功能：只对文件显示
+        if (backupItem) backupItem.style.display = (!isFolder && !isEmptySpace) ? 'block' : 'none';
+        if (viewBackupsItem) viewBackupsItem.style.display = (!isFolder && !isEmptySpace) ? 'block' : 'none';
+        
         // 重命名和删除：只在具体项目上显示，空白区域隐藏
         if (renameItem) renameItem.style.display = isEmptySpace ? 'none' : 'block';
         if (deleteItem) deleteItem.style.display = isEmptySpace ? 'none' : 'block';
         
         // 上传：文件夹或空白区域显示
         if (uploadItem) uploadItem.style.display = isFolder ? 'block' : 'none';
+
         
         // 存储默认路径（用于空白区域）
         this.contextMenu.dataset.defaultPath = defaultPath !== null ? defaultPath : (item ? item.dataset.path : this.currentMode);
         
-        // 定位菜单
-
-        this.contextMenu.style.left = `${x}px`;
-        this.contextMenu.style.top = `${y}px`;
+        // 定位菜单（带边界检测）
+        this.positionContextMenu(x, y);
         this.contextMenu.classList.remove('hidden');
+
     },
 
 
@@ -467,6 +477,51 @@ call: main()
     hideContextMenu() {
         this.contextMenu.classList.add('hidden');
     },
+
+    /**
+     * 定位上下文菜单（带边界检测）
+     * @param {number} x - 鼠标X坐标
+     * @param {number} y - 鼠标Y坐标
+     */
+    positionContextMenu(x, y) {
+        // 先设置为可见但透明，以便获取尺寸
+        this.contextMenu.style.opacity = '0';
+        this.contextMenu.style.left = '0px';
+        this.contextMenu.style.top = '0px';
+        
+        const menuWidth = this.contextMenu.offsetWidth || 200; // 默认200px
+        const menuHeight = this.contextMenu.offsetHeight || 300; // 默认300px
+        
+        // 获取视口尺寸
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        // 计算调整后的位置
+        let adjustedX = x;
+        let adjustedY = y;
+        
+        // 水平边界检测
+        if (x + menuWidth > viewportWidth) {
+            adjustedX = x - menuWidth; // 向左展开
+        }
+        if (adjustedX < 0) {
+            adjustedX = 10; // 最小边距
+        }
+        
+        // 垂直边界检测
+        if (y + menuHeight > viewportHeight) {
+            adjustedY = y - menuHeight; // 向上展开
+        }
+        if (adjustedY < 0) {
+            adjustedY = 10; // 最小边距
+        }
+        
+        // 应用调整后的位置
+        this.contextMenu.style.left = `${adjustedX}px`;
+        this.contextMenu.style.top = `${adjustedY}px`;
+        this.contextMenu.style.opacity = '1';
+    },
+
 
     /**
      * 处理上下文菜单操作
@@ -498,6 +553,12 @@ call: main()
             case 'new-folder':
                 if (isFolder) this.createNewFolder(path);
                 break;
+            case 'backup':
+                if (this.selectedTreeItem && !isFolder) this.backupFile(path);
+                break;
+            case 'view-backups':
+                if (this.selectedTreeItem && !isFolder) this.viewBackups(path);
+                break;
             case 'rename':
                 if (this.selectedTreeItem) this.renameItem(path, isFolder);
                 break;
@@ -507,6 +568,7 @@ call: main()
             case 'refresh':
                 HPLApp.refreshFileTree();
                 break;
+
         }
     },
 
@@ -603,19 +665,9 @@ call: main()
             return;
         }
         
-        // 处理路径：API需要相对于模式根目录的路径（不包含workspace/前缀）
-        let relativePath;
-        if (!folderPath || folderPath === this.currentMode) {
-            // 在根目录创建，直接使用文件名
-            relativePath = filename;
-        } else if (folderPath.startsWith(this.currentMode + '/')) {
-            // 完整路径包含模式前缀，去掉前缀后拼接
-            const subPath = folderPath.substring(this.currentMode.length + 1);
-            relativePath = subPath ? `${subPath}/${filename}` : filename;
-        } else {
-            // 其他情况，假设是相对路径
-            relativePath = `${folderPath}/${filename}`;
-        }
+        // 使用新的路径处理工具函数构建API路径
+        const relativePath = HPLUtils.buildApiPath(folderPath, filename, this.currentMode);
+
         
         try {
             // 检查文件是否已存在
@@ -634,13 +686,16 @@ call: main()
                 return false;
             };
             
-            const targetFolder = (!folderPath || folderPath === this.currentMode) ? tree : 
-                this.findNodeInTree(tree, folderPath);
+            // 规范化folderPath用于查找
+            const normalizedFolderPath = HPLUtils.normalizePath(folderPath) || this.currentMode;
+            const targetFolder = (normalizedFolderPath === this.currentMode) ? tree : 
+                this.findNodeInTree(tree, normalizedFolderPath);
             
             if (targetFolder && checkExists(targetFolder, filename)) {
                 const overwrite = confirm(`文件 "${filename}" 已存在，是否覆盖？`);
                 if (!overwrite) return;
             }
+
             
             await HPLAPI.createFile(relativePath, this.DEFAULT_CONTENT, this.currentMode);
 
@@ -1221,15 +1276,209 @@ call: main()
 
     /**
      * 高亮文件树中的文件
+     * @param {string} path - 文件的完整路径（推荐使用完整路径）
+     * @param {string} filename - 文件名（可选，用于向后兼容）
      */
-    highlightFileInTree(filename) {
+    highlightFileInTree(pathOrFilename, filename = null) {
+        // 如果提供了filename，说明第一个参数是完整路径
+        const fullPath = filename ? pathOrFilename : null;
+        const targetName = filename || pathOrFilename;
+        
         document.querySelectorAll('.file-item.file').forEach(item => {
-            const path = item.dataset.path;
-            const itemFilename = path ? path.split('/').pop() : '';
-            if (itemFilename === filename) {
+            const itemPath = item.dataset.path;
+            const itemFilename = itemPath ? itemPath.split('/').pop() : '';
+            
+            // 优先使用完整路径匹配，如果提供了完整路径
+            if (fullPath && itemPath === fullPath) {
+                this.selectTreeItem(item);
+                return;
+            }
+            
+            // 否则使用文件名匹配（注意：同名文件可能导致错误高亮）
+            if (!fullPath && itemFilename === targetName) {
                 this.selectTreeItem(item);
             }
         });
+    },
+
+
+    // ==================== 文件备份功能 ====================
+
+    /**
+     * 创建文件备份
+     */
+    async backupFile(path) {
+        try {
+            HPLUI.showOutput(`正在创建备份: ${path}...`, 'info');
+            const result = await HPLAPI.backupFile(path);
+            HPLUI.showOutput(`✅ 备份创建成功: ${result.backup.filename}`, 'success');
+        } catch (error) {
+            HPLUI.showOutput('创建备份失败: ' + error.message, 'error');
+        }
+    },
+
+    /**
+     * 查看文件备份列表
+     */
+    async viewBackups(path) {
+        try {
+            HPLUI.showOutput(`正在获取备份列表: ${path}...`, 'info');
+            const result = await HPLAPI.getBackups(path);
+            this.showBackupDialog(path, result.backups);
+        } catch (error) {
+            HPLUI.showOutput('获取备份列表失败: ' + error.message, 'error');
+        }
+    },
+
+    /**
+     * 显示备份管理对话框
+     */
+    showBackupDialog(originalPath, backups) {
+        // 移除已存在的对话框
+        const existingDialog = document.getElementById('backup-dialog');
+        if (existingDialog) {
+            existingDialog.remove();
+        }
+
+        // 创建对话框
+        const dialog = document.createElement('div');
+        dialog.id = 'backup-dialog';
+        dialog.className = 'dialog';
+        dialog.style.display = 'flex';
+
+        // 构建备份列表HTML
+        let backupsHtml = '';
+        if (backups.length === 0) {
+            backupsHtml = '<div class="no-backups">暂无备份</div>';
+        } else {
+            backupsHtml = backups.map((backup, index) => `
+                <div class="backup-item">
+                    <div class="backup-info">
+                        <span class="backup-index">#${index + 1}</span>
+                        <span class="backup-time">${this.formatBackupTime(backup.created_at)}</span>
+                        <span class="backup-size">(${this.formatFileSize(backup.size)})</span>
+                    </div>
+                    <div class="backup-actions">
+                        <button class="btn-restore" data-filename="${backup.filename}" title="恢复此版本">↩️ 恢复</button>
+                        <button class="btn-delete-backup" data-filename="${backup.filename}" title="删除此备份">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        dialog.innerHTML = `
+            <div class="dialog-content" style="max-width: 500px; max-height: 70vh; overflow-y: auto;">
+                <div class="dialog-header">
+                    <h3>📋 备份管理 - ${HPLUtils.escapeHtml(originalPath.split('/').pop())}</h3>
+                    <button type="button" class="dialog-close" id="btn-backup-close">×</button>
+                </div>
+                <div class="backups-list" style="margin: 15px 0;">
+                    ${backupsHtml}
+                </div>
+                <div class="dialog-buttons">
+                    <button type="button" id="btn-backup-refresh" class="btn-secondary">🔄 刷新</button>
+                    <button type="button" id="btn-backup-close-btn" class="btn-primary">关闭</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(dialog);
+
+        // 绑定事件
+        document.getElementById('btn-backup-close')?.addEventListener('click', () => dialog.remove());
+        document.getElementById('btn-backup-close-btn')?.addEventListener('click', () => dialog.remove());
+        document.getElementById('btn-backup-refresh')?.addEventListener('click', () => this.viewBackups(originalPath));
+
+        // 恢复按钮事件
+        dialog.querySelectorAll('.btn-restore').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const filename = btn.dataset.filename;
+                this.restoreBackup(filename, originalPath);
+            });
+        });
+
+        // 删除按钮事件
+        dialog.querySelectorAll('.btn-delete-backup').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const filename = btn.dataset.filename;
+                this.deleteBackup(filename, originalPath);
+            });
+        });
+    },
+
+    /**
+     * 格式化备份时间
+     */
+    formatBackupTime(isoTime) {
+        const date = new Date(isoTime);
+        return date.toLocaleString('zh-CN', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    },
+
+    /**
+     * 格式化文件大小
+     */
+    formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    },
+
+    /**
+     * 从备份恢复文件
+     */
+    async restoreBackup(backupFilename, originalPath) {
+        if (!confirm('确定要恢复到此版本吗？当前文件内容将被替换。')) {
+            return;
+        }
+
+        try {
+            HPLUI.showOutput(`正在恢复备份: ${backupFilename}...`, 'info');
+            const result = await HPLAPI.restoreFile(backupFilename);
+            HPLUI.showOutput(`✅ 文件已恢复: ${result.restored_to}`, 'success');
+            
+            // 如果恢复的是当前打开的文件，刷新编辑器内容
+            if (this.currentFile === originalPath) {
+                const fileData = this.openFiles.get(this.currentFile);
+                if (fileData) {
+                    // 重新读取文件内容
+                    const readResult = await HPLAPI.readFile(originalPath, this.currentMode);
+                    fileData.content = readResult.content;
+                    fileData.isModified = false;
+                    HPLEditor.setValue(readResult.content);
+                    HPLUI.updateTabTitle(this.currentFile, false);
+                }
+            }
+            
+            // 关闭对话框
+            document.getElementById('backup-dialog')?.remove();
+        } catch (error) {
+            HPLUI.showOutput('恢复备份失败: ' + error.message, 'error');
+        }
+    },
+
+    /**
+     * 删除指定备份
+     */
+    async deleteBackup(backupFilename, originalPath) {
+        if (!confirm('确定要删除此备份吗？')) {
+            return;
+        }
+
+        try {
+            HPLUI.showOutput(`正在删除备份: ${backupFilename}...`, 'info');
+            await HPLAPI.deleteBackup(backupFilename);
+            HPLUI.showOutput('✅ 备份已删除', 'success');
+            
+            // 刷新备份列表
+            this.viewBackups(originalPath);
+        } catch (error) {
+            HPLUI.showOutput('删除备份失败: ' + error.message, 'error');
+        }
     }
 };
 
