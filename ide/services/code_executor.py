@@ -66,9 +66,10 @@ def execute_hpl(file_path):
         
         with contextlib.redirect_stdout(output_buffer):
             parser = HPLParser(file_path)
-            classes, objects, main_func, call_target, imports = parser.parse()
+            classes, objects, functions, main_func, call_target, call_args, imports = parser.parse()
             
-            evaluator = HPLEvaluator(classes, objects, main_func, call_target)
+            evaluator = HPLEvaluator(classes, objects, functions, main_func, call_target, call_args)
+
             
             # 处理顶层导入
             for imp in imports:
