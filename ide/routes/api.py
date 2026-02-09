@@ -18,6 +18,8 @@ from utils.helpers import execute_with_timeout, TimeoutException
 from services.security import limit_request_size, validate_path, is_safe_filename
 from services.code_processor import clean_code, copy_include_files
 from services.code_executor import execute_hpl, check_runtime_available
+from services.syntax_validator import validate_code
+
 
 
 logger = logging.getLogger(__name__)
@@ -623,6 +625,45 @@ def register_api_routes(app: Flask):
                 'success': False,
                 'error': str(e)
             })
+
+    @app.route('/api/validate', methods=['POST'])
+    @limit_request_size(MAX_REQUEST_SIZE)
+    def validate_syntax():
+        """
+        语法验证端点
+        静态分析HPL代码，不执行代码只检查语法错误
+        """
+        code = request.form.get('code', '')
+        
+        if not code.strip():
+            return jsonify({
+                'success': True,
+                'valid': True,
+                'errors': [],
+                'warnings': [],
+                'message': '代码为空'
+            })
+        
+        # 清理代码中的转义字符
+        code = clean_code(code)
+        
+        try:
+            # 执行语法验证
+            result = validate_code(code)
+            result['success'] = True
+            
+            logger.info(f"语法验证完成: {result['total_errors']} 个错误, {result['total_warnings']} 个警告")
+            return jsonify(result)
+            
+        except Exception as e:
+            logger.error(f"语法验证失败: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': f'语法验证失败: {str(e)}',
+                'valid': False,
+                'errors': [],
+                'warnings': []
+            }), 500
 
     @app.route('/api/health', methods=['GET'])
     def health_check():
