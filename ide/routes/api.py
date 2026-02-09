@@ -410,6 +410,73 @@ def register_api_routes(app: Flask):
                 'error': str(e)
             })
 
+    @app.route('/api/files/save', methods=['POST'])
+    def save_file():
+        """
+        保存文件（创建或更新）
+        """
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'error': '请求数据不能为空'
+                })
+            
+            path = data.get('path', '')
+            content = data.get('content', '')
+            mode = data.get('mode', 'workspace')
+            
+            if not path:
+                return jsonify({
+                    'success': False,
+                    'error': '文件路径不能为空'
+                })
+            
+            # 安全检查
+            if not is_safe_filename(os.path.basename(path)):
+                return jsonify({
+                    'success': False,
+                    'error': '无效的文件名'
+                })
+            
+            # 根据模式选择基础路径
+            base_path = get_base_path(mode)
+            
+            # 构建完整路径并验证
+            full_path = os.path.join(base_path, path)
+            validated_path = validate_path(full_path, base_path)
+            
+            if not validated_path:
+                return jsonify({
+                    'success': False,
+                    'error': '无效的文件路径'
+                })
+            
+            # 确保父目录存在
+            parent_dir = os.path.dirname(validated_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+            
+            # 保存文件（创建或覆盖）
+            with open(validated_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            logger.info(f"保存文件: {validated_path}")
+            return jsonify({
+                'success': True,
+                'message': '文件保存成功',
+                'path': path
+            })
+            
+        except Exception as e:
+            logger.error(f"保存文件错误: {e}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            })
+
+
     @app.route('/api/folders/create', methods=['POST'])
     def create_folder():
         """
