@@ -264,6 +264,123 @@ const HPLAPI = {
         }
         
         return result;
+    },
+
+    // ==================== 文件备份 API ====================
+
+    /**
+     * 创建文件备份
+     * @param {string} path - 文件路径
+     */
+    async backupFile(path) {
+        if (!path) {
+            throw new Error('文件路径不能为空');
+        }
+        
+        const response = await fetch(HPLConfig.buildApiUrl('/files/backup'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ path })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '创建备份失败');
+        }
+        
+        return result;
+    },
+
+    /**
+     * 获取文件备份列表
+     * @param {string} path - 文件路径（可选，不传则返回所有备份）
+     */
+    async getBackups(path = '') {
+        const url = path 
+            ? HPLConfig.buildApiUrl(`/files/backups?path=${encodeURIComponent(path)}`)
+            : HPLConfig.buildApiUrl('/files/backups');
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '获取备份列表失败');
+        }
+        
+        return result;
+    },
+
+    /**
+     * 从备份恢复文件
+     * @param {string} backupFilename - 备份文件名
+     * @param {string} targetPath - 目标路径（可选）
+     */
+    async restoreFile(backupFilename, targetPath = '') {
+        if (!backupFilename) {
+            throw new Error('备份文件名不能为空');
+        }
+        
+        const response = await fetch(HPLConfig.buildApiUrl('/files/restore'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ backup_filename: backupFilename, target_path: targetPath })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '恢复备份失败');
+        }
+        
+        return result;
+    },
+
+    /**
+     * 删除指定备份
+     * @param {string} backupFilename - 备份文件名
+     */
+    async deleteBackup(backupFilename) {
+        if (!backupFilename) {
+            throw new Error('备份文件名不能为空');
+        }
+        
+        const response = await fetch(HPLConfig.buildApiUrl('/files/backup'), {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ backup_filename: backupFilename })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '删除备份失败');
+        }
+        
+        return result;
     }
 
 };

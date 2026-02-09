@@ -1295,8 +1295,93 @@ kbd {
 
 
 
+/* 备份对话框样式 */
+.backups-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.backup-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.15s;
+}
+
+.backup-item:hover {
+    background-color: var(--bg-hover);
+}
+
+.backup-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+}
+
+.backup-index {
+    color: var(--accent-color);
+    font-weight: bold;
+    min-width: 30px;
+}
+
+.backup-time {
+    color: var(--text-primary);
+}
+
+.backup-size {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.backup-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-restore {
+    padding: 6px 12px;
+    background-color: var(--success-color);
+    color: #1e1e1e;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.btn-restore:hover {
+    background-color: #3dd9b0;
+}
+
+.btn-delete-backup {
+    padding: 6px 10px;
+    background-color: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.btn-delete-backup:hover {
+    background-color: var(--error-color);
+    border-color: var(--error-color);
+}
+
+.no-backups {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-style: italic;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
+
 
     .sidebar {
         position: absolute;
