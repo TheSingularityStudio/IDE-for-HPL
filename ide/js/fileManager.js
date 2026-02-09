@@ -1063,35 +1063,26 @@ call: main()
     /**
      * 保存当前文件
      */
-    saveCurrentFile() {
+    async saveCurrentFile() {
         if (!this.currentFile) {
             HPLUI.showSaveDialog(this.DEFAULT_FILENAME);
             return;
         }
         
-        const content = HPLEditor.getValue();
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        
-        let a = null;
         try {
-            a = document.createElement('a');
-            a.href = url;
-            a.download = this.currentFile.replace('*', '');
-            document.body.appendChild(a);
-            a.click();
+            const content = HPLEditor.getValue();
+            const cleanFilename = this.currentFile.replace('*', '');
+            
+            // 使用 API 保存文件到服务器
+            await HPLAPI.saveFile(cleanFilename, content, this.currentMode);
             
             this.markFileAsModified(this.currentFile, false);
-            HPLUI.showOutput('文件已保存: ' + this.currentFile.replace('*', ''), 'success');
+            HPLUI.showOutput('文件已保存: ' + cleanFilename, 'success');
         } catch (error) {
             HPLUI.showOutput('保存文件失败: ' + error.message, 'error');
-        } finally {
-            if (a && a.parentNode) {
-                a.parentNode.removeChild(a);
-            }
-            URL.revokeObjectURL(url);
         }
     },
+
 
     /**
      * 确认保存（从对话框）

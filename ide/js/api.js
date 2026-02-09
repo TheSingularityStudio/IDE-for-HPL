@@ -183,6 +183,38 @@ const HPLAPI = {
     },
 
     /**
+     * 保存文件（创建或更新）
+     * @param {string} path - 文件路径
+     * @param {string} content - 文件内容
+     * @param {string} mode - 'workspace' 或 'examples'
+     */
+    async saveFile(path, content = '', mode = 'workspace') {
+        if (!path) {
+            throw new Error('文件路径不能为空');
+        }
+        
+        const response = await fetch(HPLConfig.buildApiUrl('/files/save'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ path, content, mode })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || '保存文件失败');
+        }
+        
+        return result;
+    },
+
+    /**
      * 创建新文件夹
      * @param {string} path - 文件夹路径
      * @param {string} mode - 'workspace' 或 'examples'
