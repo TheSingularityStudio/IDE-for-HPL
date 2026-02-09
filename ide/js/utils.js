@@ -78,8 +78,141 @@ const HPLUtils = {
                 setTimeout(() => inThrottle = false, limit);
             }
         };
+    },
+
+    /**
+     * 路径处理工具函数 - 规范化路径
+     * @param {string} path - 原始路径
+     * @returns {string} 规范化后的路径
+     */
+    normalizePath(path) {
+        if (!path || typeof path !== 'string') return '';
+        
+        // 统一使用正斜杠
+        let normalized = path.replace(/\\/g, '/');
+        
+        // 移除多余斜杠
+        normalized = normalized.replace(/\/+/g, '/');
+        
+        // 移除末尾斜杠（根目录除外）
+        if (normalized.length > 1 && normalized.endsWith('/')) {
+            normalized = normalized.slice(0, -1);
+        }
+        
+        return normalized;
+    },
+
+    /**
+     * 路径处理工具函数 - 拼接路径
+     * @param {string} basePath - 基础路径
+     * @param {string} relativePath - 相对路径
+     * @returns {string} 拼接后的路径
+     */
+    joinPath(basePath, relativePath) {
+        const normalizedBase = this.normalizePath(basePath);
+        const normalizedRelative = this.normalizePath(relativePath);
+        
+        if (!normalizedBase) return normalizedRelative;
+        if (!normalizedRelative) return normalizedBase;
+        
+        // 如果relativePath是绝对路径，直接返回
+        if (normalizedRelative.startsWith('/') || normalizedRelative.includes(':/')) {
+            return normalizedRelative;
+        }
+        
+        return `${normalizedBase}/${normalizedRelative}`;
+    },
+
+    /**
+     * 路径处理工具函数 - 获取文件名
+     * @param {string} path - 完整路径
+     * @returns {string} 文件名
+     */
+    getFilename(path) {
+        const normalized = this.normalizePath(path);
+        if (!normalized) return '';
+        
+        const parts = normalized.split('/');
+        return parts[parts.length - 1] || '';
+    },
+
+    /**
+     * 路径处理工具函数 - 获取父目录路径
+     * @param {string} path - 完整路径
+     * @returns {string} 父目录路径
+     */
+    getParentPath(path) {
+        const normalized = this.normalizePath(path);
+        if (!normalized) return '';
+        
+        const lastSlashIndex = normalized.lastIndexOf('/');
+        if (lastSlashIndex <= 0) return '';
+        
+        return normalized.substring(0, lastSlashIndex);
+    },
+
+    /**
+     * 路径处理工具函数 - 获取相对路径（从模式根目录）
+     * @param {string} fullPath - 完整路径
+     * @param {string} mode - 模式（workspace/examples）
+     * @returns {string} 相对路径
+     */
+    getRelativePath(fullPath, mode) {
+        const normalized = this.normalizePath(fullPath);
+        if (!normalized) return '';
+        
+        // 如果路径以模式名开头，移除它
+        const modePrefix = `${mode}/`;
+        if (normalized.startsWith(modePrefix)) {
+            return normalized.substring(modePrefix.length);
+        }
+        
+        return normalized;
+    },
+
+    /**
+     * 路径处理工具函数 - 构建API使用的路径
+     * @param {string} folderPath - 文件夹路径
+     * @param {string} filename - 文件名
+     * @param {string} mode - 当前模式
+     * @returns {string} API使用的相对路径
+     */
+    buildApiPath(folderPath, filename, mode) {
+        // 规范化文件名
+        const normalizedFilename = this.normalizePath(filename);
+        
+        // 如果在根目录
+        if (!folderPath || folderPath === mode) {
+            return normalizedFilename;
+        }
+        
+        // 移除模式前缀
+        const relativeFolder = this.getRelativePath(folderPath, mode);
+        
+        if (!relativeFolder) {
+            return normalizedFilename;
+        }
+        
+        return `${relativeFolder}/${normalizedFilename}`;
+    },
+
+    /**
+     * 路径处理工具函数 - 检查路径是否在指定目录下
+     * @param {string} path - 要检查的路径
+     * @param {string} parentPath - 父目录路径
+     * @returns {boolean} 是否在父目录下
+     */
+    isPathUnder(path, parentPath) {
+        const normalizedPath = this.normalizePath(path);
+        const normalizedParent = this.normalizePath(parentPath);
+        
+        if (!normalizedPath || !normalizedParent) return false;
+        
+        return normalizedPath.startsWith(normalizedParent + '/') || 
+               normalizedPath === normalizedParent;
     }
 };
+
 
 // 导出模块
 if (typeof module !== 'undefined' && module.exports) {

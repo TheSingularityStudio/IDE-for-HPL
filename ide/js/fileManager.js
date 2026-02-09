@@ -464,11 +464,10 @@ call: main()
         // 存储默认路径（用于空白区域）
         this.contextMenu.dataset.defaultPath = defaultPath !== null ? defaultPath : (item ? item.dataset.path : this.currentMode);
         
-        // 定位菜单
-
-        this.contextMenu.style.left = `${x}px`;
-        this.contextMenu.style.top = `${y}px`;
+        // 定位菜单（带边界检测）
+        this.positionContextMenu(x, y);
         this.contextMenu.classList.remove('hidden');
+
     },
 
 
@@ -478,6 +477,51 @@ call: main()
     hideContextMenu() {
         this.contextMenu.classList.add('hidden');
     },
+
+    /**
+     * 定位上下文菜单（带边界检测）
+     * @param {number} x - 鼠标X坐标
+     * @param {number} y - 鼠标Y坐标
+     */
+    positionContextMenu(x, y) {
+        // 先设置为可见但透明，以便获取尺寸
+        this.contextMenu.style.opacity = '0';
+        this.contextMenu.style.left = '0px';
+        this.contextMenu.style.top = '0px';
+        
+        const menuWidth = this.contextMenu.offsetWidth || 200; // 默认200px
+        const menuHeight = this.contextMenu.offsetHeight || 300; // 默认300px
+        
+        // 获取视口尺寸
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        
+        // 计算调整后的位置
+        let adjustedX = x;
+        let adjustedY = y;
+        
+        // 水平边界检测
+        if (x + menuWidth > viewportWidth) {
+            adjustedX = x - menuWidth; // 向左展开
+        }
+        if (adjustedX < 0) {
+            adjustedX = 10; // 最小边距
+        }
+        
+        // 垂直边界检测
+        if (y + menuHeight > viewportHeight) {
+            adjustedY = y - menuHeight; // 向上展开
+        }
+        if (adjustedY < 0) {
+            adjustedY = 10; // 最小边距
+        }
+        
+        // 应用调整后的位置
+        this.contextMenu.style.left = `${adjustedX}px`;
+        this.contextMenu.style.top = `${adjustedY}px`;
+        this.contextMenu.style.opacity = '1';
+    },
+
 
     /**
      * 处理上下文菜单操作
@@ -621,19 +665,9 @@ call: main()
             return;
         }
         
-        // 处理路径：API需要相对于模式根目录的路径（不包含workspace/前缀）
-        let relativePath;
-        if (!folderPath || folderPath === this.currentMode) {
-            // 在根目录创建，直接使用文件名
-            relativePath = filename;
-        } else if (folderPath.startsWith(this.currentMode + '/')) {
-            // 完整路径包含模式前缀，去掉前缀后拼接
-            const subPath = folderPath.substring(this.currentMode.length + 1);
-            relativePath = subPath ? `${subPath}/${filename}` : filename;
-        } else {
-            // 其他情况，假设是相对路径
-            relativePath = `${folderPath}/${filename}`;
-        }
+        // 使用新的路径处理工具函数构建API路径
+        const relativePath = HPLUtils.buildApiPath(folderPath, filename, this.currentMode);
+
         
         try {
             // 检查文件是否已存在
@@ -652,13 +686,16 @@ call: main()
                 return false;
             };
             
-            const targetFolder = (!folderPath || folderPath === this.currentMode) ? tree : 
-                this.findNodeInTree(tree, folderPath);
+            // 规范化folderPath用于查找
+            const normalizedFolderPath = HPLUtils.normalizePath(folderPath) || this.currentMode;
+            const targetFolder = (normalizedFolderPath === this.currentMode) ? tree : 
+                this.findNodeInTree(tree, normalizedFolderPath);
             
             if (targetFolder && checkExists(targetFolder, filename)) {
                 const overwrite = confirm(`文件 "${filename}" 已存在，是否覆盖？`);
                 if (!overwrite) return;
             }
+
             
             await HPLAPI.createFile(relativePath, this.DEFAULT_CONTENT, this.currentMode);
 
@@ -1239,16 +1276,31 @@ call: main()
 
     /**
      * 高亮文件树中的文件
+     * @param {string} path - 文件的完整路径（推荐使用完整路径）
+     * @param {string} filename - 文件名（可选，用于向后兼容）
      */
-    highlightFileInTree(filename) {
+    highlightFileInTree(pathOrFilename, filename = null) {
+        // 如果提供了filename，说明第一个参数是完整路径
+        const fullPath = filename ? pathOrFilename : null;
+        const targetName = filename || pathOrFilename;
+        
         document.querySelectorAll('.file-item.file').forEach(item => {
-            const path = item.dataset.path;
-            const itemFilename = path ? path.split('/').pop() : '';
-            if (itemFilename === filename) {
+            const itemPath = item.dataset.path;
+            const itemFilename = itemPath ? itemPath.split('/').pop() : '';
+            
+            // 优先使用完整路径匹配，如果提供了完整路径
+            if (fullPath && itemPath === fullPath) {
+                this.selectTreeItem(item);
+                return;
+            }
+            
+            // 否则使用文件名匹配（注意：同名文件可能导致错误高亮）
+            if (!fullPath && itemFilename === targetName) {
                 this.selectTreeItem(item);
             }
         });
     },
+
 
     // ==================== 文件备份功能 ====================
 
