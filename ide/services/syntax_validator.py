@@ -742,7 +742,8 @@ class HPLSyntaxValidator:
             if examples_dir not in sys.path:
                 sys.path.insert(0, examples_dir)
             
-            from hpl_runtime.parser import HPLParser
+            # 修复：从hpl_runtime直接导入，而不是从hpl_runtime.parser
+            from hpl_runtime import HPLParser
             
             # 创建临时文件（使用UTF-8编码）
             with tempfile.NamedTemporaryFile(mode='w', suffix='.hpl', delete=False, encoding='utf-8') as f:

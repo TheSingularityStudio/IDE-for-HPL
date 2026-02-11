@@ -56,10 +56,8 @@ def execute_hpl(file_path):
         sys.path.insert(0, ALLOWED_EXAMPLES_DIR)
     
     try:
-        # 导入hpl_runtime组件
-        from hpl_runtime.parser import HPLParser
-        from hpl_runtime.evaluator import HPLEvaluator
-        from hpl_runtime.models import ImportStatement
+        # 修复：从hpl_runtime直接导入，而不是从子模块
+        from hpl_runtime import HPLParser, HPLEvaluator, ImportStatement
         
         # 捕获输出
         output_buffer = io.StringIO()
