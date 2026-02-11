@@ -1,13 +1,22 @@
 """
 HPL语法验证服务
 提供静态语法分析功能，不执行代码只检查语法
+集成 hpl_runtime 进行深度语法检查
 """
 
 import re
 import logging
 from typing import List, Dict, Any, Optional
 
+# 导入调试服务
+try:
+    from ide.services.debug_service import get_error_analyzer
+    _debug_service_available = True
+except ImportError:
+    _debug_service_available = False
+
 logger = logging.getLogger(__name__)
+
 
 
 class SyntaxErrorInfo:
@@ -730,7 +739,7 @@ class HPLSyntaxValidator:
 
     
     def _check_with_runtime(self, code: str):
-        """尝试使用hpl_runtime进行解析（如果可用）"""
+        """尝试使用hpl_runtime进行深度解析（如果可用）"""
         try:
             # 尝试导入hpl_runtime
             import sys
@@ -742,8 +751,8 @@ class HPLSyntaxValidator:
             if examples_dir not in sys.path:
                 sys.path.insert(0, examples_dir)
             
-            # 修复：从hpl_runtime直接导入，而不是从hpl_runtime.parser
-            from hpl_runtime import HPLParser
+            # 从hpl_runtime导入
+            from hpl_runtime import HPLParser, HPLSyntaxError, HPLRuntimeError
             
             # 创建临时文件（使用UTF-8编码）
             with tempfile.NamedTemporaryFile(mode='w', suffix='.hpl', delete=False, encoding='utf-8') as f:
@@ -756,8 +765,40 @@ class HPLSyntaxValidator:
                 parser = HPLParser(temp_file)
                 parser.parse()
                 
+            except HPLSyntaxError as e:
+                # 捕获HPL语法错误 - 使用详细的错误信息
+                error_info = SyntaxErrorInfo(
+                    line=e.line or 1,
+                    column=e.column or 1,
+                    message=e.message or str(e),
+                    severity="error",
+                    code=self._get_code_at_line(code, e.line) if e.line else None
+                )
+                
+                # 添加错误键（如果有）
+                if hasattr(e, 'error_key') and e.error_key:
+                    error_info.message = f"[{e.error_key}] {error_info.message}"
+                
+                self.errors.append(error_info)
+                
+                # 如果有错误分析器，获取修复建议
+                if _debug_service_available:
+                    try:
+                        analyzer = get_error_analyzer()
+                        analysis = analyzer.analyze_error(e, code)
+                        if analysis.get('suggestions'):
+                            for suggestion in analysis['suggestions']:
+                                self.warnings.append(SyntaxErrorInfo(
+                                    line=e.line or 1,
+                                    column=1,
+                                    message=f"建议: {suggestion}",
+                                    severity="info"
+                                ))
+                    except Exception as analysis_error:
+                        logger.debug(f"错误分析失败: {analysis_error}")
+                
             except SyntaxError as e:
-                # 捕获语法错误
+                # 捕获Python语法错误（可能是HPL解析器内部错误）
                 self.errors.append(SyntaxErrorInfo(
                     line=e.lineno or 1,
                     column=e.offset or 1,
@@ -765,6 +806,16 @@ class HPLSyntaxValidator:
                     severity="error",
                     code=e.text
                 ))
+                
+            except HPLRuntimeError as e:
+                # 运行时错误（在解析阶段不应该出现，但以防万一）
+                self.errors.append(SyntaxErrorInfo(
+                    line=e.line or 1,
+                    column=e.column or 1,
+                    message=f"运行时错误: {e.message}",
+                    severity="error"
+                ))
+                
             except Exception as e:
                 # 其他解析错误
                 error_msg = str(e)
@@ -772,11 +823,18 @@ class HPLSyntaxValidator:
                 line_match = re.search(r'line\s+(\d+)', error_msg, re.IGNORECASE)
                 line_num = int(line_match.group(1)) if line_match else 1
                 
+                # 尝试从异常对象获取行号
+                if hasattr(e, 'line') and e.line:
+                    line_num = e.line
+                elif hasattr(e, 'lineno') and e.lineno:
+                    line_num = e.lineno
+                
                 self.errors.append(SyntaxErrorInfo(
                     line=line_num,
-                    column=1,
+                    column=getattr(e, 'column', getattr(e, 'offset', 1)),
                     message=error_msg,
-                    severity="error"
+                    severity="error",
+                    code=self._get_code_at_line(code, line_num)
                 ))
             finally:
                 # 清理临时文件
@@ -790,6 +848,17 @@ class HPLSyntaxValidator:
             logger.debug("hpl_runtime不可用，使用基本语法检查")
         except Exception as e:
             logger.error(f"使用hpl_runtime检查失败: {e}")
+    
+    def _get_code_at_line(self, code: str, line_num: int) -> Optional[str]:
+        """获取指定行的代码"""
+        if not line_num or line_num < 1:
+            return None
+        
+        lines = code.split('\n')
+        if line_num <= len(lines):
+            return lines[line_num - 1]
+        return None
+
 
 
 # 全局验证器实例
@@ -804,15 +873,77 @@ def get_validator() -> HPLSyntaxValidator:
     return _validator
 
 
-def validate_code(code: str) -> Dict[str, Any]:
+def validate_code(code: str, use_runtime: bool = True) -> Dict[str, Any]:
     """
     验证HPL代码语法的便捷函数
     
     Args:
         code: HPL代码字符串
+        use_runtime: 是否使用hpl_runtime进行深度检查（默认True）
         
     Returns:
         dict: 验证结果
     """
     validator = get_validator()
-    return validator.validate(code)
+    result = validator.validate(code)
+    
+    # 如果需要，使用hpl_runtime进行额外检查
+    if use_runtime and _debug_service_available:
+        try:
+            # 已经通过_check_with_runtime检查了，这里可以添加额外的分析
+            pass
+        except Exception as e:
+            logger.debug(f"额外运行时检查失败: {e}")
+    
+    return result
+
+
+def validate_with_suggestions(code: str) -> Dict[str, Any]:
+    """
+    验证代码并提供修复建议
+    
+    Args:
+        code: HPL代码字符串
+        
+    Returns:
+        dict: 包含验证结果和修复建议
+    """
+    result = validate_code(code, use_runtime=True)
+    
+    # 收集所有建议
+    suggestions = []
+    for warning in result.get('warnings', []):
+        if '建议:' in warning.get('message', ''):
+            suggestions.append(warning['message'].replace('建议: ', ''))
+    
+    result['suggestions'] = suggestions
+    return result
+
+
+def get_error_details(code: str, line: int, column: int) -> Optional[Dict[str, Any]]:
+    """
+    获取指定位置的错误详情
+    
+    Args:
+        code: HPL代码字符串
+        line: 行号（1-based）
+        column: 列号（1-based）
+        
+    Returns:
+        dict: 错误详情，如果没有则返回None
+    """
+    result = validate_code(code)
+    
+    # 查找指定位置的错误
+    for error in result.get('errors', []):
+        if error.get('line') == line:
+            return {
+                'line': line,
+                'column': column,
+                'message': error.get('message'),
+                'severity': error.get('severity'),
+                'code': error.get('code'),
+                'suggestions': []
+            }
+    
+    return None
