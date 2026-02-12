@@ -20,8 +20,7 @@ from typing import Dict, List, Any, Optional, Tuple, Generator
 from dataclasses import dataclass, field
 
 # 导入代码处理和安全模块
-from ide.services.code_processor import copy_include_files
-from ide.services.security import validate_path, is_safe_filename
+from ide.services.code_service import copy_include_files, validate_path, is_safe_filename
 from ide.services.runtime_manager import check_runtime_available
 
 # Unix-specific modules for sandboxing
