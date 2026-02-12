@@ -1,7 +1,6 @@
 """
-执行工具模块
-提供进程隔离的执行和超时控制
-解决线程超时无法终止HPL运行时的问题（P0修复）
+通用工具模块
+合并了执行工具、助手函数和临时文件管理
 """
 
 import os
@@ -10,14 +9,13 @@ import multiprocessing
 import logging
 import time
 import signal
+import tempfile
+import shutil
+import atexit
 from typing import Dict, Any, Optional, List, Callable
 from contextlib import contextmanager
 
-# Import code processor for include file handling (P2修复)
-from ide.services.code_processor import copy_include_files
-
 logger = logging.getLogger(__name__)
-
 
 
 class ExecutionTimeoutError(Exception):
@@ -30,49 +28,6 @@ class ExecutionKilledError(Exception):
     pass
 
 
-def _execute_in_process(file_path: str, 
-                       result_queue: multiprocessing.Queue,
-                       error_queue: multiprocessing.Queue,
-                       call_target: Optional[str] = None,
-                       call_args: Optional[List] = None,
-                       debug_mode: bool = False,
-                       input_data: Optional[Any] = None):
-    """
-    在独立进程中执行HPL代码
-    
-    这是子进程的目标函数，在主进程中被调用
-    
-    P1修复：添加input_data参数支持
-    """
-    try:
-        # 在子进程中导入，避免影响主进程
-        from ide.services.hpl_engine import HPLEngine
-        
-        engine = HPLEngine()
-        
-        if not engine.load_file(file_path):
-            result_queue.put({
-                'success': False,
-                'error': f'无法加载文件: {file_path}'
-            })
-            return
-        
-        # P1修复：传递input_data
-        if debug_mode:
-            result = engine.debug(call_target=call_target, call_args=call_args, input_data=input_data)
-        else:
-            result = engine.execute(call_target=call_target, call_args=call_args, input_data=input_data)
-        
-        result_queue.put(result)
-        
-    except Exception as e:
-        error_queue.put({
-            'type': type(e).__name__,
-            'message': str(e),
-            'args': getattr(e, 'args', ())
-        })
-
-
 def execute_with_process_timeout(file_path: str,
                                  timeout: float = 5.0,
                                  call_target: Optional[str] = None,
@@ -81,19 +36,15 @@ def execute_with_process_timeout(file_path: str,
                                  input_data: Optional[Any] = None) -> Dict[str, Any]:
     """
     使用进程隔离执行HPL代码，带超时控制
-    
-    这是P0修复的核心函数，使用multiprocessing实现真正的进程级超时
-    
-    P1修复：添加input_data参数支持
-    
+
     Args:
         file_path: HPL文件路径
         timeout: 超时时间（秒）
         call_target: 可选的调用目标函数
         call_args: 可选的调用参数
         debug_mode: 是否启用调试模式
-        input_data: 可选的输入数据（P1修复新增）
-    
+        input_data: 可选的输入数据
+
     Returns:
         dict: 执行结果
     """
@@ -102,37 +53,37 @@ def execute_with_process_timeout(file_path: str,
             'success': False,
             'error': f'文件不存在: {file_path}'
         }
-    
+
     # 创建进程间通信队列
     result_queue = multiprocessing.Queue()
     error_queue = multiprocessing.Queue()
-    
+
     # 创建子进程
     process = multiprocessing.Process(
         target=_execute_in_process,
         args=(file_path, result_queue, error_queue, call_target, call_args, debug_mode, input_data),
         name='HPL-Executor'
     )
-    
+
     start_time = time.time()
-    
+
     try:
         # 启动子进程
         process.start()
         logger.info(f"启动执行进程 (PID={process.pid}): {file_path}")
-        
+
         # 等待进程完成或超时
         process.join(timeout)
-        
+
         # 检查是否超时
         if process.is_alive():
             # 超时，需要终止进程
             logger.warning(f"执行超时 ({timeout}秒)，终止进程 (PID={process.pid})")
-            
+
             # 先尝试优雅终止
             process.terminate()
             process.join(2)  # 等待2秒
-            
+
             # 如果还在运行，强制杀死
             if process.is_alive():
                 logger.error(f"进程未响应，强制杀死 (PID={process.pid})")
@@ -146,17 +97,17 @@ def execute_with_process_timeout(file_path: str,
                     # Windows使用kill
                     process.kill()
                 process.join(1)
-            
+
             return {
                 'success': False,
                 'error': f'执行超时: 代码运行超过 {timeout} 秒限制',
                 'error_type': 'TimeoutError',
                 'execution_time': timeout
             }
-        
+
         # 检查执行时间
         execution_time = time.time() - start_time
-        
+
         # 检查是否有错误
         if not error_queue.empty():
             error_info = error_queue.get()
@@ -167,7 +118,7 @@ def execute_with_process_timeout(file_path: str,
                 'error_type': error_info['type'],
                 'execution_time': execution_time
             }
-        
+
         # 获取结果
         if not result_queue.empty():
             result = result_queue.get()
@@ -184,7 +135,7 @@ def execute_with_process_timeout(file_path: str,
                 'error_type': 'ProcessError',
                 'execution_time': execution_time
             }
-            
+
     except Exception as e:
         logger.error(f"执行控制错误: {e}", exc_info=True)
         # 确保进程被终止
@@ -198,6 +149,32 @@ def execute_with_process_timeout(file_path: str,
         }
 
 
+def _execute_in_process(file_path: str,
+                       result_queue: multiprocessing.Queue,
+                       error_queue: multiprocessing.Queue,
+                       call_target: Optional[str] = None,
+                       call_args: Optional[List] = None,
+                       debug_mode: bool = False,
+                       input_data: Optional[Any] = None):
+    """
+    在独立进程中执行HPL代码
+    """
+    try:
+        # 在子进程中导入，避免影响主进程
+        from ide.services.execution_service import HPLExecutionService
+
+        service = HPLExecutionService()
+        result = service.execute_file(file_path, call_target, call_args, debug_mode, input_data)
+        result_queue.put(result)
+
+    except Exception as e:
+        error_queue.put({
+            'type': type(e).__name__,
+            'message': str(e),
+            'args': getattr(e, 'args', ())
+        })
+
+
 def execute_code_with_timeout(code: str,
                               timeout: float = 5.0,
                               call_target: Optional[str] = None,
@@ -207,55 +184,51 @@ def execute_code_with_timeout(code: str,
                               input_data: Optional[Any] = None) -> Dict[str, Any]:
     """
     执行HPL代码字符串，带超时控制
-    
-    P1修复：添加input_data参数支持
-    P2修复：添加include文件复制支持
-    
+
     Args:
         code: HPL代码字符串
         timeout: 超时时间（秒）
         call_target: 可选的调用目标函数
         call_args: 可选的调用参数
         debug_mode: 是否启用调试模式
-        file_path: 可选的文件路径（用于错误显示和include路径解析）
-        input_data: 可选的输入数据（P1修复新增）
-    
+        file_path: 可选的文件路径
+        input_data: 可选的输入数据
+
     Returns:
         dict: 执行结果
     """
     import tempfile
-    import os
-    import shutil
-    
+
     # 创建临时文件
     temp_dir = tempfile.mkdtemp(prefix='hpl_exec_')
     temp_file = os.path.join(temp_dir, 'temp_code.hpl')
-    
+
     try:
-        # 复制 include 文件到临时目录（P2修复：解决include文件找不到的问题）
+        # 复制 include 文件到临时目录
+        from ide.services.code_service import copy_include_files
         copied_files, _, not_found = copy_include_files(
             code, temp_dir, current_file=file_path
         )
-        
+
         if not_found:
             logger.warning(f"未找到的 include 文件: {', '.join(not_found)}")
-        
+
         # 写入代码到临时文件
         with open(temp_file, 'w', encoding='utf-8') as f:
             f.write(code)
-        
+
         # 使用进程隔离执行
         result = execute_with_process_timeout(
-            temp_file, 
+            temp_file,
             timeout=timeout,
             call_target=call_target,
             call_args=call_args,
             debug_mode=debug_mode,
             input_data=input_data
         )
-        
+
         return result
-        
+
     finally:
         # 清理临时文件
         try:
@@ -264,100 +237,66 @@ def execute_code_with_timeout(code: str,
             pass
 
 
-
 @contextmanager
-def execution_timeout(timeout: float, 
-                     on_timeout: Optional[Callable] = None):
+def temp_directory(prefix: str = 'hpl_'):
     """
-    执行超时上下文管理器（用于同步代码块）
-    
-    注意：这使用信号实现，只在Unix系统上有效
-    对于Windows，建议使用 execute_with_process_timeout
-    
+    临时目录上下文管理器
+
     Args:
-        timeout: 超时时间（秒）
-        on_timeout: 超时时的回调函数
-    
-    Example:
-        with execution_timeout(5.0):
-            # 执行可能耗时的操作
-            result = long_running_operation()
+        prefix: 临时目录前缀
+
+    Yields:
+        str: 临时目录路径
     """
-    if sys.platform == 'win32':
-        # Windows不支持信号超时，使用进程版本
-        logger.warning("Windows系统不支持信号超时，请使用 execute_with_process_timeout")
-        yield
-        return
-    
-    def timeout_handler(signum, frame):
-        if on_timeout:
-            on_timeout()
-        raise ExecutionTimeoutError(f"执行超时（{timeout}秒）")
-    
-    # 设置信号处理器
-    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(int(timeout))
-    
+    temp_dir = tempfile.mkdtemp(prefix=prefix)
     try:
-        yield
+        yield temp_dir
     finally:
-        # 恢复信号处理器
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except:
+            pass
 
 
-def check_process_resources(process: multiprocessing.Process,
-                            max_memory_mb: int = 100,
-                            max_cpu_percent: float = 90.0) -> Dict[str, Any]:
+def execute_with_timeout(func, timeout_sec, *args, **kwargs):
     """
-    检查进程资源使用情况
-    
+    带超时的函数执行（线程实现）
+
     Args:
-        process: 进程对象
-        max_memory_mb: 最大内存限制（MB）
-        max_cpu_percent: 最大CPU使用率限制（%）
-    
+        func: 要执行的函数
+        timeout_sec: 超时时间（秒）
+        *args, **kwargs: 传递给函数的参数
+
     Returns:
-        dict: 资源使用情况
+        函数执行结果
+
+    Raises:
+        ExecutionTimeoutError: 当执行超时时
     """
-    try:
-        import psutil
-        
-        if not process.is_alive():
-            return {'alive': False}
-        
-        proc = psutil.Process(process.pid)
-        
-        # 获取内存使用
-        memory_info = proc.memory_info()
-        memory_mb = memory_info.rss / (1024 * 1024)
-        
-        # 获取CPU使用
-        cpu_percent = proc.cpu_percent(interval=0.1)
-        
-        result = {
-            'alive': True,
-            'pid': process.pid,
-            'memory_mb': memory_mb,
-            'memory_percent': proc.memory_percent(),
-            'cpu_percent': cpu_percent,
-            'memory_limit_exceeded': memory_mb > max_memory_mb,
-            'cpu_limit_exceeded': cpu_percent > max_cpu_percent
-        }
-        
-        return result
-        
-    except ImportError:
-        return {
-            'alive': process.is_alive(),
-            'pid': process.pid,
-            'error': 'psutil not available'
-        }
-    except Exception as e:
-        return {
-            'alive': process.is_alive(),
-            'error': str(e)
-        }
+    import threading
+
+    result = [None]
+    exception = [None]
+
+    def target():
+        try:
+            result[0] = func(*args, **kwargs)
+        except Exception as e:
+            exception[0] = e
+
+    thread = threading.Thread(target=target)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout_sec)
+
+    if thread.is_alive():
+        logger.warning(f"代码执行超时（{timeout_sec}秒）")
+        raise ExecutionTimeoutError(f"代码执行超过 {timeout_sec} 秒限制")
+
+    if exception[0]:
+        raise exception[0]
+
+    return result[0]
 
 
 # 便捷函数
@@ -367,15 +306,13 @@ def execute_hpl_safe(file_path: str,
                     **kwargs) -> Dict[str, Any]:
     """
     安全执行HPL文件的便捷函数
-    
-    P1修复：添加input_data参数支持
-    
+
     Args:
         file_path: HPL文件路径
         timeout: 超时时间（秒）
-        input_data: 可选的输入数据（P1修复新增）
-        **kwargs: 传递给 execute_with_process_timeout 的其他参数
-    
+        input_data: 可选的输入数据
+        **kwargs: 其他参数
+
     Returns:
         dict: 执行结果
     """
@@ -388,15 +325,13 @@ def execute_hpl_code_safe(code: str,
                          **kwargs) -> Dict[str, Any]:
     """
     安全执行HPL代码字符串的便捷函数
-    
-    P1修复：添加input_data参数支持
-    
+
     Args:
         code: HPL代码字符串
         timeout: 超时时间（秒）
-        input_data: 可选的输入数据（P1修复新增）
-        **kwargs: 传递给 execute_code_with_timeout 的其他参数
-    
+        input_data: 可选的输入数据
+        **kwargs: 其他参数
+
     Returns:
         dict: 执行结果
     """
@@ -404,5 +339,5 @@ def execute_hpl_code_safe(code: str,
 
 
 # 向后兼容
-execute_with_timeout = execute_with_process_timeout
+execute_with_timeout_old = execute_with_timeout
 TimeoutException = ExecutionTimeoutError
