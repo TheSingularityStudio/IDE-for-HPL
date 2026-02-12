@@ -7,7 +7,6 @@ from .static import register_static_routes
 from .execution_routes import register_execution_routes
 from .file_routes import register_file_routes
 from .example_routes import register_example_routes
-from .health_routes import register_health_routes
 
 
 def register_all_routes(app: Flask):
@@ -21,4 +20,3 @@ def register_all_routes(app: Flask):
     register_execution_routes(app)
     register_file_routes(app)
     register_example_routes(app)
-    register_health_routes(app)

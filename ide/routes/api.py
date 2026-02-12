@@ -12,28 +12,18 @@ from datetime import datetime
 from flask import Flask, request, jsonify, Response, stream_with_context
 
 from config import (
-    MAX_REQUEST_SIZE, MAX_EXECUTION_TIME, 
-    ALLOWED_WORKSPACE_DIR, ALLOWED_EXAMPLES_DIR, SERVER_VERSION,
-    BACKUP_DIR, MAX_BACKUP_COUNT
+    MAX_REQUEST_SIZE, MAX_EXECUTION_TIME,
+    ALLOWED_WORKSPACE_DIR, ALLOWED_EXAMPLES_DIR, SERVER_VERSION
 )
 
-
-# P0修复：使用新的执行工具（进程隔离 + 资源限制）
-from ide.utils.execution_utils import execute_with_process_timeout, ExecutionTimeoutError
-from ide.services.sandbox_executor import execute_in_sandbox, execute_code_in_sandbox
-from ide.utils.temp_manager import temp_directory, TempManager
-
-from ide.services.security import limit_request_size, validate_path, is_safe_filename
-
-from ide.services.code_processor import clean_code, copy_include_files
-
-# P0修复：从统一运行时管理器导入
+# 使用新的统一服务
+from ide.services.code_service import (
+    limit_request_size, validate_path, is_safe_filename,
+    clean_code, copy_include_files, validate_code_syntax
+)
+from ide.services.execution_service import get_execution_service
 from ide.services.runtime_manager import check_runtime_available
-
-from ide.services.syntax_validator import validate_code
-
-# P1修复：导入流式执行
-from ide.services.hpl_engine import execute_code_streaming
+from ide.utils import temp_directory
 
 
 
@@ -92,7 +82,7 @@ def register_api_routes(app: Flask):
             with temp_directory(prefix='hpl_exec_') as temp_dir:
                 # 复制 include 文件到临时目录
                 temp_include_files, code, not_found_includes = copy_include_files(code, temp_dir)
-                
+
                 # 如果有未找到的 include 文件，记录警告
                 if not_found_includes:
                     logger.warning(f"未找到的 include 文件: {', '.join(not_found_includes)}")
@@ -101,21 +91,22 @@ def register_api_routes(app: Flask):
                 temp_file = os.path.join(temp_dir, 'main.hpl')
                 with open(temp_file, 'w', encoding='utf-8') as f:
                     f.write(code)
-                
+
                 logger.info(f"执行临时文件: {temp_file}")
-                
-                # P0修复：使用沙箱执行（带资源限制和进程隔离）
-                # P1修复：传递input_data
-                result = execute_in_sandbox(
-                    temp_file,
-                    timeout=MAX_EXECUTION_TIME,
-                    max_memory_mb=100,  # 100MB内存限制
-                    max_cpu_time=MAX_EXECUTION_TIME,  # CPU时间限制
-                    input_data=input_data
+
+                # 使用新的执行服务
+                service = get_execution_service()
+                result = service.execute_code(
+                    code,
+                    call_target=None,
+                    call_args=None,
+                    file_path=temp_file,
+                    input_data=input_data,
+                    use_sandbox=True
                 )
-                
+
                 return jsonify(result)
-                
+
         except Exception as e:
             logger.error(f"服务器错误: {str(e)}", exc_info=True)
             return jsonify({
@@ -873,267 +864,4 @@ def register_api_routes(app: Flask):
             }
         })
 
-    # ==================== 文件备份 API ====================
 
-    def ensure_backup_dir():
-        """确保备份目录存在"""
-        if not os.path.exists(BACKUP_DIR):
-            os.makedirs(BACKUP_DIR, exist_ok=True)
-
-    def get_backup_filename(original_path):
-        """生成备份文件名"""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        # 将路径中的斜杠替换为下划线，避免目录嵌套
-        safe_path = original_path.replace('/', '_').replace('\\', '_')
-        return f"{safe_path}.{timestamp}.backup"
-
-    @app.route('/api/files/backup', methods=['POST'])
-    def backup_file():
-        """
-        创建文件备份
-        请求体: { path: '相对路径' }
-        """
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({'success': False, 'error': '请求数据不能为空'}), 400
-            
-            path = data.get('path', '')
-            if not path:
-                return jsonify({'success': False, 'error': '文件路径不能为空'}), 400
-            
-            # 安全检查
-            if not is_safe_filename(os.path.basename(path)):
-                return jsonify({'success': False, 'error': '无效的文件名'}), 400
-            
-            # 构建完整路径并验证
-            file_path = os.path.join(ALLOWED_WORKSPACE_DIR, path)
-            validated_path = validate_path(file_path, ALLOWED_WORKSPACE_DIR)
-            
-            if not validated_path or not os.path.isfile(validated_path):
-                return jsonify({'success': False, 'error': '文件不存在'}), 404
-            
-            # 确保备份目录存在
-            ensure_backup_dir()
-            
-            # 生成备份文件名
-            backup_filename = get_backup_filename(path)
-            backup_path = os.path.join(BACKUP_DIR, backup_filename)
-            
-            # 复制文件到备份目录
-            shutil.copy2(validated_path, backup_path)
-            
-            # 清理旧备份（保留最近 MAX_BACKUP_COUNT 个）
-            cleanup_old_backups(path)
-            
-            logger.info(f"创建备份: {path} -> {backup_filename}")
-            
-            return jsonify({
-                'success': True,
-                'message': '备份创建成功',
-                'backup': {
-                    'filename': backup_filename,
-                    'path': backup_path,
-                    'original': path,
-                    'created_at': datetime.now().isoformat()
-                }
-            })
-            
-        except Exception as e:
-            logger.error(f"创建备份失败: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
-
-    def cleanup_old_backups(original_path):
-        """清理旧备份，只保留最近的 MAX_BACKUP_COUNT 个"""
-        try:
-            safe_prefix = original_path.replace('/', '_').replace('\\', '_')
-            backup_files = []
-            
-            for filename in os.listdir(BACKUP_DIR):
-                if filename.startswith(safe_prefix) and filename.endswith('.backup'):
-                    filepath = os.path.join(BACKUP_DIR, filename)
-                    backup_files.append({
-                        'filename': filename,
-                        'path': filepath,
-                        'mtime': os.path.getmtime(filepath)
-                    })
-            
-            # 按修改时间排序（最新的在前）
-            backup_files.sort(key=lambda x: x['mtime'], reverse=True)
-            
-            # 删除超出限制的备份
-            for backup in backup_files[MAX_BACKUP_COUNT:]:
-                os.remove(backup['path'])
-                logger.info(f"清理旧备份: {backup['filename']}")
-                
-        except Exception as e:
-            logger.error(f"清理旧备份失败: {e}")
-
-    @app.route('/api/files/backups', methods=['GET'])
-    def list_backups():
-        """
-        获取文件的备份列表
-        查询参数: path=文件路径
-        """
-        try:
-            path = request.args.get('path', '')
-            
-            if not path:
-                # 返回所有备份
-                backups = []
-                if os.path.exists(BACKUP_DIR):
-                    for filename in os.listdir(BACKUP_DIR):
-                        if filename.endswith('.backup'):
-                            filepath = os.path.join(BACKUP_DIR, filename)
-                            # 解析原始文件路径
-                            parts = filename.rsplit('.', 2)  # [original, timestamp, backup]
-                            if len(parts) == 3:
-                                original = parts[0].replace('_', '/')
-                                backups.append({
-                                    'filename': filename,
-                                    'original': original,
-                                    'created_at': datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat(),
-                                    'size': os.path.getsize(filepath)
-                                })
-                
-                backups.sort(key=lambda x: x['created_at'], reverse=True)
-                return jsonify({'success': True, 'backups': backups})
-            
-            # 返回指定文件的备份
-            if not is_safe_filename(os.path.basename(path)):
-                return jsonify({'success': False, 'error': '无效的文件名'}), 400
-            
-            safe_prefix = path.replace('/', '_').replace('\\', '_')
-            backups = []
-            
-            if os.path.exists(BACKUP_DIR):
-                for filename in os.listdir(BACKUP_DIR):
-                    if filename.startswith(safe_prefix) and filename.endswith('.backup'):
-                        filepath = os.path.join(BACKUP_DIR, filename)
-                        parts = filename.rsplit('.', 2)
-                        if len(parts) == 3:
-                            timestamp = parts[1]
-                            backups.append({
-                                'filename': filename,
-                                'original': path,
-                                'timestamp': timestamp,
-                                'created_at': datetime.fromtimestamp(os.path.getmtime(filepath)).isoformat(),
-                                'size': os.path.getsize(filepath)
-                            })
-            
-            backups.sort(key=lambda x: x['created_at'], reverse=True)
-            return jsonify({'success': True, 'backups': backups, 'original': path})
-            
-        except Exception as e:
-            logger.error(f"获取备份列表失败: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
-
-    @app.route('/api/files/restore', methods=['POST'])
-    def restore_backup():
-        """
-        从备份恢复文件
-        请求体: { backup_filename: '备份文件名', target_path: '目标路径（可选）' }
-        """
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({'success': False, 'error': '请求数据不能为空'}), 400
-            
-            backup_filename = data.get('backup_filename', '')
-            target_path = data.get('target_path', '')
-            
-            if not backup_filename:
-                return jsonify({'success': False, 'error': '备份文件名不能为空'}), 400
-            
-            # 安全检查
-            if not is_safe_filename(backup_filename):
-                return jsonify({'success': False, 'error': '无效的备份文件名'}), 400
-            
-            # 构建备份文件路径
-            backup_path = os.path.join(BACKUP_DIR, backup_filename)
-            
-            if not os.path.exists(backup_path) or not os.path.isfile(backup_path):
-                return jsonify({'success': False, 'error': '备份文件不存在'}), 404
-            
-            # 如果没有指定目标路径，从备份文件名解析
-            if not target_path:
-                parts = backup_filename.rsplit('.', 2)
-                if len(parts) == 3:
-                    target_path = parts[0].replace('_', '/')
-            
-            if not target_path:
-                return jsonify({'success': False, 'error': '无法确定目标路径'}), 400
-            
-            # 验证目标路径
-            if not is_safe_filename(os.path.basename(target_path)):
-                return jsonify({'success': False, 'error': '无效的目标文件名'}), 400
-            
-            full_target_path = os.path.join(ALLOWED_WORKSPACE_DIR, target_path)
-            validated_target = validate_path(full_target_path, ALLOWED_WORKSPACE_DIR)
-            
-            if not validated_target:
-                return jsonify({'success': False, 'error': '无效的目标路径'}), 400
-            
-            # 确保目标目录存在
-            parent_dir = os.path.dirname(validated_target)
-            if parent_dir and not os.path.exists(parent_dir):
-                os.makedirs(parent_dir, exist_ok=True)
-            
-            # 恢复文件
-            shutil.copy2(backup_path, validated_target)
-            
-            logger.info(f"恢复备份: {backup_filename} -> {target_path}")
-            
-            return jsonify({
-                'success': True,
-                'message': '文件恢复成功',
-                'restored_to': target_path
-            })
-            
-        except Exception as e:
-            logger.error(f"恢复备份失败: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500
-
-    @app.route('/api/files/backup', methods=['DELETE'])
-    def delete_backup():
-        """
-        删除指定备份
-        请求体: { backup_filename: '备份文件名' }
-        """
-        try:
-            data = request.get_json()
-            if not data:
-                return jsonify({'success': False, 'error': '请求数据不能为空'}), 400
-            
-            backup_filename = data.get('backup_filename', '')
-            
-            if not backup_filename:
-                return jsonify({'success': False, 'error': '备份文件名不能为空'}), 400
-            
-            # 安全检查
-            if not is_safe_filename(backup_filename):
-                return jsonify({'success': False, 'error': '无效的备份文件名'}), 400
-            
-            # 构建备份文件路径
-            backup_path = os.path.join(BACKUP_DIR, backup_filename)
-            
-            # 验证路径在备份目录内
-            if not backup_path.startswith(BACKUP_DIR):
-                return jsonify({'success': False, 'error': '无效的路径'}), 400
-            
-            if not os.path.exists(backup_path):
-                return jsonify({'success': False, 'error': '备份文件不存在'}), 404
-            
-            # 删除备份
-            os.remove(backup_path)
-            
-            logger.info(f"删除备份: {backup_filename}")
-            
-            return jsonify({
-                'success': True,
-                'message': '备份已删除'
-            })
-            
-        except Exception as e:
-            logger.error(f"删除备份失败: {e}")
-            return jsonify({'success': False, 'error': str(e)}), 500

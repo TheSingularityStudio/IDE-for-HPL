@@ -61,7 +61,7 @@ def register_execution_routes(app):
             })
 
         try:
-            diagnostics = validate_code(code)
+            diagnostics = validate_code_syntax(code)
             return jsonify({
                 'success': True,
                 'valid': len([d for d in diagnostics if d.get('severity') == 'error']) == 0,

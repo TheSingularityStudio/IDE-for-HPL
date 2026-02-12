@@ -14,7 +14,7 @@ from functools import wraps
 from flask import request, jsonify
 
 from config import MAX_REQUEST_SIZE, ALLOWED_EXAMPLES_DIR
-from ide.services.execution_service import HPLEngine, check_runtime_available
+
 
 logger = logging.getLogger(__name__)
 
@@ -102,15 +102,7 @@ def clean_code(code: str) -> str:
     Returns:
         清理后的代码字符串
     """
-    # 如果引擎可用，使用引擎的清理方法
-    try:
-        engine = HPLEngine()
-        # 简单清理实现
-        return code.replace('\\n', '\n').replace('\\t', '\t')
-    except:
-        pass
-
-    # 备用清理实现
+    # 简单清理实现
     result = []
     i = 0
     length = len(code)
