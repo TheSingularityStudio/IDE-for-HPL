@@ -24,8 +24,11 @@ try:
 except ImportError:
     signal = None
 
+# Import code processor for include file handling
+from ide.services.code_processor import copy_include_files
 
 logger = logging.getLogger(__name__)
+
 
 
 @dataclass
@@ -308,7 +311,7 @@ class SandboxExecutor:
             call_target: 调用目标
             call_args: 调用参数
             debug_mode: 调试模式
-            file_path: 可选的文件路径（用于错误显示）
+            file_path: 可选的文件路径（用于错误显示和include路径解析）
             input_data: 输入数据（P1修复新增）
         
         Returns:
@@ -319,6 +322,14 @@ class SandboxExecutor:
         temp_file = os.path.join(temp_dir, 'code.hpl')
         
         try:
+            # 复制 include 文件到临时目录（P2修复：解决include文件找不到的问题）
+            copied_files, _, not_found = copy_include_files(
+                code, temp_dir, current_file=file_path
+            )
+            
+            if not_found:
+                logger.warning(f"未找到的 include 文件: {', '.join(not_found)}")
+            
             # 写入代码
             with open(temp_file, 'w', encoding='utf-8') as f:
                 f.write(code)
@@ -341,6 +352,7 @@ class SandboxExecutor:
                 shutil.rmtree(temp_dir, ignore_errors=True)
             except:
                 pass
+
 
 
 def execute_in_sandbox(file_path: str,
@@ -377,6 +389,7 @@ def execute_code_in_sandbox(code: str,
                            max_memory_mb: int = 100,
                            max_cpu_time: int = 10,
                            input_data: Optional[Any] = None,
+                           file_path: Optional[str] = None,
                            **kwargs) -> Dict[str, Any]:
     """
     便捷函数：在沙箱中执行HPL代码字符串
@@ -387,6 +400,7 @@ def execute_code_in_sandbox(code: str,
         max_memory_mb: 最大内存（MB）
         max_cpu_time: 最大CPU时间（秒）
         input_data: 输入数据（P1修复新增）
+        file_path: 可选的文件路径（用于include路径解析，P2修复新增）
         **kwargs: 其他参数
     
     Returns:
@@ -398,7 +412,8 @@ def execute_code_in_sandbox(code: str,
     )
     
     sandbox = SandboxExecutor(limits)
-    return sandbox.execute_code(code, timeout=timeout, input_data=input_data, **kwargs)
+    return sandbox.execute_code(code, timeout=timeout, input_data=input_data, file_path=file_path, **kwargs)
+
 
 
 # 默认沙箱执行器实例

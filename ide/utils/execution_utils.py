@@ -13,7 +13,11 @@ import signal
 from typing import Dict, Any, Optional, List, Callable
 from contextlib import contextmanager
 
+# Import code processor for include file handling (P2修复)
+from ide.services.code_processor import copy_include_files
+
 logger = logging.getLogger(__name__)
+
 
 
 class ExecutionTimeoutError(Exception):
@@ -205,6 +209,7 @@ def execute_code_with_timeout(code: str,
     执行HPL代码字符串，带超时控制
     
     P1修复：添加input_data参数支持
+    P2修复：添加include文件复制支持
     
     Args:
         code: HPL代码字符串
@@ -212,7 +217,7 @@ def execute_code_with_timeout(code: str,
         call_target: 可选的调用目标函数
         call_args: 可选的调用参数
         debug_mode: 是否启用调试模式
-        file_path: 可选的文件路径（用于错误显示）
+        file_path: 可选的文件路径（用于错误显示和include路径解析）
         input_data: 可选的输入数据（P1修复新增）
     
     Returns:
@@ -220,12 +225,21 @@ def execute_code_with_timeout(code: str,
     """
     import tempfile
     import os
+    import shutil
     
     # 创建临时文件
     temp_dir = tempfile.mkdtemp(prefix='hpl_exec_')
     temp_file = os.path.join(temp_dir, 'temp_code.hpl')
     
     try:
+        # 复制 include 文件到临时目录（P2修复：解决include文件找不到的问题）
+        copied_files, _, not_found = copy_include_files(
+            code, temp_dir, current_file=file_path
+        )
+        
+        if not_found:
+            logger.warning(f"未找到的 include 文件: {', '.join(not_found)}")
+        
         # 写入代码到临时文件
         with open(temp_file, 'w', encoding='utf-8') as f:
             f.write(code)
@@ -245,10 +259,10 @@ def execute_code_with_timeout(code: str,
     finally:
         # 清理临时文件
         try:
-            import shutil
             shutil.rmtree(temp_dir, ignore_errors=True)
         except:
             pass
+
 
 
 @contextmanager

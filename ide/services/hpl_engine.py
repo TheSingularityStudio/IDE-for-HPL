@@ -20,8 +20,12 @@ from dataclasses import dataclass
 # 导入统一的运行时管理器（P0修复）
 from ide.services.runtime_manager import check_runtime_available, get_runtime_manager
 
+# P2修复：导入include文件处理
+from ide.services.code_processor import copy_include_files
+
 # 配置日志
 logger = logging.getLogger(__name__)
+
 
 
 @dataclass
@@ -146,12 +150,22 @@ class HPLEngine:
         # 创建临时文件进行解析
         from hpl_runtime import HPLParser
         
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.hpl', 
-                                         delete=False, encoding='utf-8') as f:
-            f.write(self.source_code)
-            temp_file = f.name
+        # P2修复：创建临时目录并复制include文件
+        temp_dir = tempfile.mkdtemp(prefix='hpl_parse_')
+        temp_file = os.path.join(temp_dir, 'temp_code.hpl')
         
         try:
+            # 复制include文件到临时目录
+            copied_files, _, not_found = copy_include_files(
+                self.source_code, temp_dir, current_file=self.current_file
+            )
+            if not_found:
+                logger.warning(f"解析时未找到的include文件: {', '.join(not_found)}")
+            
+            # 写入代码到临时文件
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                f.write(self.source_code)
+            
             parser = HPLParser(temp_file)
             result = parser.parse()
             self._parse_result = result
@@ -163,10 +177,13 @@ class HPLEngine:
             return result
             
         finally:
+            # 清理临时目录
             try:
-                os.unlink(temp_file)
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
             except:
                 pass
+
     
     def validate(self) -> List[Diagnostic]:
         """
