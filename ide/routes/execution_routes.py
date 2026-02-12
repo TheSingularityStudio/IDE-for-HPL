@@ -4,10 +4,11 @@
 """
 
 import logging
+import json
 from flask import request, jsonify
 
 from ide.services.execution_service import get_execution_service
-from ide.services.code_service import limit_request_size, validate_code
+from ide.services.code_service import limit_request_size
 from config import MAX_REQUEST_SIZE
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,9 @@ def register_execution_routes(app):
             })
 
         try:
-            diagnostics = validate_code_syntax(code)
+            service = get_execution_service()
+            diagnostics = service.validate_code(code)
+
             return jsonify({
                 'success': True,
                 'valid': len([d for d in diagnostics if d.get('severity') == 'error']) == 0,
@@ -78,3 +81,4 @@ def register_execution_routes(app):
                 'errors': [],
                 'warnings': []
             }), 500
+

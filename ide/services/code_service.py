@@ -13,7 +13,8 @@ from typing import Dict, List, Any, Optional, Tuple
 from functools import wraps
 from flask import request, jsonify
 
-from config import MAX_REQUEST_SIZE, ALLOWED_EXAMPLES_DIR
+from ide.config import MAX_REQUEST_SIZE, ALLOWED_EXAMPLES_DIR
+
 
 
 logger = logging.getLogger(__name__)
@@ -297,111 +298,3 @@ def copy_include_files(code: str, temp_dir: str,
             not_found.append(include_file)
 
     return copied_files, code, not_found
-
-
-# Validation functions
-def validate_code_syntax(code: str, file_path: Optional[str] = None) -> List[Dict[str, Any]]:
-    """
-    验证代码语法
-
-    Args:
-        code: HPL 代码
-        file_path: 可选的文件路径
-
-    Returns:
-        List[Dict]: 诊断信息列表
-    """
-    try:
-        engine = HPLEngine()
-        engine.load_code(code, file_path)
-        return engine.validate()
-    except ImportError:
-        return [{
-            'line': 1, 'column': 1, 'severity': 'error',
-            'message': 'hpl_runtime 不可用'
-        }]
-
-
-def get_completion_items(code: str, line: int, column: int,
-                         prefix: str = "") -> List[Dict[str, Any]]:
-    """
-    获取代码补全项
-
-    Args:
-        code: HPL 源代码
-        line: 当前行号（1-based）
-        column: 当前列号（1-based）
-        prefix: 当前输入前缀
-
-    Returns:
-        list: 补全项列表
-    """
-    try:
-        engine = HPLEngine()
-        engine.load_code(code)
-        return engine.get_completions(line, column, prefix)
-    except ImportError:
-        # 基础补全
-        keywords = ['if', 'else', 'for', 'while', 'try', 'catch', 'echo', 'return']
-        return [{'label': k, 'kind': 'Keyword'} for k in keywords if k.startswith(prefix)]
-
-
-def get_code_outline(code: str) -> Dict[str, List[Dict[str, Any]]]:
-    """
-    获取代码大纲
-
-    Args:
-        code: HPL 源代码
-
-    Returns:
-        dict: 代码结构大纲
-    """
-    try:
-        engine = HPLEngine()
-        engine.load_code(code)
-        return engine.get_code_outline()
-    except ImportError:
-        return {'classes': [], 'functions': [], 'objects': [], 'imports': []}
-
-
-# Error analysis
-def get_error_context(code: str, error: Exception,
-                      file_path: Optional[str] = None) -> Dict[str, Any]:
-    """
-    获取错误上下文
-
-    Args:
-        code: HPL 源代码
-        error: 异常对象
-        file_path: 可选的文件路径
-
-    Returns:
-        dict: 错误分析结果
-    """
-    line_num = getattr(error, 'line', getattr(error, 'lineno', None))
-
-    surrounding = []
-    if line_num:
-        lines = code.split('\n')
-        start = max(0, line_num - 3 - 1)
-        end = min(len(lines), line_num + 3)
-        for i in range(start, end):
-            surrounding.append({
-                'line_number': i + 1,
-                'content': lines[i],
-                'is_error_line': (i + 1) == line_num
-            })
-
-    return {
-        'error_type': type(error).__name__,
-        'message': str(error),
-        'line': line_num,
-        'surrounding_lines': surrounding,
-        'suggestions': ['检查代码逻辑', '参考 HPL 语法手册'],
-        'file': file_path
-    }
-
-
-# Convenience functions
-get_completions = get_completion_items
-validate_code = validate_code_syntax

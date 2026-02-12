@@ -18,12 +18,9 @@ from ide.services.code_service import (
     is_safe_filename,
     clean_code,
     extract_includes,
-    copy_include_files,
-    validate_code_syntax,
-    get_completion_items,
-    get_code_outline,
-    get_error_context
+    copy_include_files
 )
+
 
 # 运行时管理
 from ide.services.runtime_manager import (
@@ -46,10 +43,7 @@ __all__ = [
     'clean_code',
     'extract_includes',
     'copy_include_files',
-    'validate_code_syntax',
-    'get_completion_items',
-    'get_code_outline',
-    'get_error_context',
+
 
     # 运行时管理
     'check_runtime_available',

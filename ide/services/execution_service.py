@@ -45,25 +45,8 @@ class ResourceLimits:
     max_file_size_mb: int = 10
 
 
-@dataclass
-class Breakpoint:
-    """断点信息"""
-    line: int
-    condition: Optional[str] = None
-    enabled: bool = True
-    hit_count: int = 0
-
-
-@dataclass
-class ExecutionTraceEntry:
-    """执行跟踪条目"""
-    event_type: str
-    line: Optional[int]
-    details: Dict[str, Any]
-    timestamp: float
-
-
 class ParseCache:
+
     """解析结果缓存"""
 
     def __init__(self, cache_dir: Optional[str] = None):
@@ -862,17 +845,26 @@ class HPLExecutionService:
                 'error_type': type(e).__name__
             }
 
-    def validate_code(self, code: str, file_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    def validate_code(self, code: str, file_path: Optional[str] = None) -> Dict[str, Any]:
         """验证代码"""
         try:
             engine = HPLEngine()
             engine.load_code(code, file_path)
-            return engine.validate()
+            diagnostics = engine.validate()
+            errors = [d for d in diagnostics if d.get('severity') == 'error']
+            return {
+                'success': len(errors) == 0,
+                'diagnostics': diagnostics
+            }
         except ImportError:
-            return [{
-                'line': 1, 'column': 1, 'severity': 'error',
-                'message': 'hpl_runtime 不可用'
-            }]
+            return {
+                'success': False,
+                'diagnostics': [{
+                    'line': 1, 'column': 1, 'severity': 'error',
+                    'message': 'hpl_runtime 不可用'
+                }]
+            }
+
 
     def get_completions(self, code: str, line: int, column: int,
                        prefix: str = "", file_path: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -903,24 +895,3 @@ def get_execution_service() -> HPLExecutionService:
     if _execution_service is None:
         _execution_service = HPLExecutionService()
     return _execution_service
-
-# 便捷函数
-def execute_hpl_file(file_path: str, **kwargs) -> Dict[str, Any]:
-    service = get_execution_service()
-    return service.execute_file(file_path, **kwargs)
-
-def execute_hpl_code(code: str, **kwargs) -> Dict[str, Any]:
-    service = get_execution_service()
-    return service.execute_code(code, **kwargs)
-
-def validate_hpl_code(code: str, **kwargs) -> List[Dict[str, Any]]:
-    service = get_execution_service()
-    return service.validate_code(code, **kwargs)
-
-def get_hpl_completions(code: str, **kwargs) -> List[Dict[str, Any]]:
-    service = get_execution_service()
-    return service.get_completions(code, **kwargs)
-
-def get_hpl_outline(code: str, **kwargs) -> Dict[str, List[Dict[str, Any]]]:
-    service = get_execution_service()
-    return service.get_code_outline(code, **kwargs)
