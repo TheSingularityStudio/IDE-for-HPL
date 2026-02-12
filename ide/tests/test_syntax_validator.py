@@ -457,8 +457,34 @@ class TestControlFlowStatements(unittest.TestCase):
     def test_valid_for_loop(self):
         """测试有效的 for 循环"""
         code = '''main:
-  for (i = 0; i < 10; i++):
+  for (i in range(10)):
     echo i'''
+        result = self.validator.validate(code)
+        for_errors = [
+            e for e in result['errors']
+            if "for循环语法错误" in e['message']
+        ]
+        self.assertEqual(len(for_errors), 0)
+    
+    def test_valid_for_loop_with_array(self):
+        """测试有效的 for in 数组循环"""
+        code = '''main:
+  arr = [1, 2, 3]
+  for (item in arr):
+    echo item'''
+        result = self.validator.validate(code)
+        for_errors = [
+            e for e in result['errors']
+            if "for循环语法错误" in e['message']
+        ]
+        self.assertEqual(len(for_errors), 0)
+    
+    def test_valid_for_loop_with_string(self):
+        """测试有效的 for in 字符串循环"""
+        code = '''main:
+  text = "hello"
+  for (char in text):
+    echo char'''
         result = self.validator.validate(code)
         for_errors = [
             e for e in result['errors']
@@ -469,7 +495,7 @@ class TestControlFlowStatements(unittest.TestCase):
     def test_invalid_for_loop(self):
         """测试无效的 for 循环"""
         code = '''main:
-  for i in range(10):
+  for i = 0; i < 10; i++:
     echo i'''
         result = self.validator.validate(code)
         has_for_error = any(
@@ -477,6 +503,7 @@ class TestControlFlowStatements(unittest.TestCase):
             for e in result['errors']
         )
         self.assertTrue(has_for_error)
+
     
     def test_valid_while_loop(self):
         """测试有效的 while 循环"""
@@ -617,7 +644,7 @@ class TestOtherStatements(unittest.TestCase):
     def test_valid_break_continue(self):
         """测试有效的 break/continue"""
         code = '''main:
-  for (i = 0; i < 10; i++):
+  for (i in range(10)):
     if (i == 5):
       break
     if (i == 3):
@@ -629,6 +656,7 @@ class TestOtherStatements(unittest.TestCase):
             if "break/continue" in e['message']
         ]
         self.assertEqual(len(loop_errors), 0)
+
     
     def test_invalid_break(self):
         """测试无效的 break"""
@@ -808,10 +836,11 @@ main:
   
   if (x > 0):
     echo "positive"
-    for (i = 0; i < 3; i++):
+    for (i in range(3)):
       echo i
   else:
     echo "non-positive"
+
   
   try:
     result = calc.add(x, y)
@@ -841,8 +870,8 @@ main:
     def test_nested_structures(self):
         """测试嵌套结构"""
         code = '''main:
-  for (i = 0; i < 3; i++):
-    for (j = 0; j < 3; j++):
+  for (i in range(3)):
+    for (j in range(3)):
       if (i == j):
         echo "equal"
       else:
@@ -851,6 +880,7 @@ main:
         break'''
         result = self.validator.validate(code)
         self.assertEqual(len(result['errors']), 0)
+
 
 
 class TestConvenienceFunctions(unittest.TestCase):

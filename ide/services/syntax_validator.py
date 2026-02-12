@@ -683,23 +683,80 @@ class HPLSyntaxValidator:
 
     
     def _check_for_statement(self, line_num: int, line: str, stripped: str):
-        """检查for循环语法: for (init; cond; incr) :"""
-        # HPL使用C风格for循环: for (i = 0; i < count; i++) :  (允许行尾注释)
-        pattern = r'^for\s+\(([^;]*);\s*([^;]*);\s*([^)]*)\)\s*:\s*(?:#.*)?$'
-        match = re.match(pattern, stripped)
+        """检查for循环语法: for (variable in iterable) :"""
+        # HPL使用for-in风格: for (i in range(10)) :  (允许行尾注释)
+        # 支持: for (i in range(n)) :, for (item in arr) :, for (key in dict) :, for (char in str) :
+        
+        # 基本模式检查：必须以 for ( 开头，以 ) : 结尾
+        basic_pattern = r'^for\s+\(\s*([A-Za-z_][A-Za-z0-9_]*)\s+in\s+(.+)\)\s*:\s*(?:#.*)?$'
+        match = re.match(basic_pattern, stripped)
         
         if not match:
-            # 也支持for-in风格
-            pattern_in = r'^for\s+\(([^)]+)\)\s*:\s*(?:#.*)?$'
-            match_in = re.match(pattern_in, stripped)
-            if not match_in:
+            self.errors.append(SyntaxErrorInfo(
+                line=line_num,
+                column=line.index('for') + 1,
+                message="for循环语法错误，正确格式: for (variable in iterable) :",
+                severity="error",
+                code=line
+            ))
+            return
+        
+        # 获取iterable表达式（从"in "之后到最后的")"之前）
+        # 需要找到与开头的"("匹配的")"
+        # 找到"in "的位置
+        in_pos = stripped.find(' in ')
+        if in_pos == -1:
+            self.errors.append(SyntaxErrorInfo(
+                line=line_num,
+                column=line.index('for') + 1,
+                message="for循环语法错误，缺少 'in' 关键字",
+                severity="error",
+                code=line
+            ))
+            return
+        
+        # 找到iterable表达式的起始位置（跳过"in "）
+        iterable_start = in_pos + 4
+        
+        # 找到最后的") :"来定位iterable的结束
+        # 从后往前找") :"
+        close_paren_colon_pos = stripped.rfind('):')
+        if close_paren_colon_pos == -1:
+            # 可能是 ) : 有空格的情况
+            close_paren_pos = stripped.rfind(')')
+            if close_paren_pos == -1 or close_paren_pos <= iterable_start:
                 self.errors.append(SyntaxErrorInfo(
                     line=line_num,
                     column=line.index('for') + 1,
-                    message="for循环语法错误，正确格式: for (init; condition; increment) :",
+                    message="for循环语法错误，缺少闭合的')'",
                     severity="error",
                     code=line
                 ))
+                return
+            iterable_end = close_paren_pos
+        else:
+            iterable_end = close_paren_colon_pos
+        
+        # 提取iterable表达式
+        iterable_expr = stripped[iterable_start:iterable_end].strip()
+        
+        # 验证iterable表达式中的括号是否平衡
+        if '(' in iterable_expr:
+            open_count = iterable_expr.count('(')
+            close_count = iterable_expr.count(')')
+            if open_count != close_count:
+                self.errors.append(SyntaxErrorInfo(
+                    line=line_num,
+                    column=line.index('for') + 1,
+                    message="for循环语法错误，iterable表达式中的括号不匹配",
+                    severity="error",
+                    code=line
+                ))
+
+
+
+
+
 
     
     def _check_while_statement(self, line_num: int, line: str, stripped: str):
