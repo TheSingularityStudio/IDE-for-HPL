@@ -26,13 +26,87 @@ HPL 程序以 YAML 文件的形式编写，主要包含以下顶级键：
 ```yaml
 includes:
   - base.hpl
+  - subdir/utils.hpl
+  - ../common.hpl
 ```
 
 - 使用 YAML 列表格式，每个文件路径前加 `-`。
-- 被包含的文件中的类和对象可以在当前文件中使用。
+- 被包含的文件中的类、对象和函数可以在当前文件中使用。
 - 被包含的文件会在预处理阶段合并到当前文件中。
 
-## 2.1 模块导入（imports）
+### 2.1 路径解析规则
+
+HPL 的 include 系统支持多种路径格式，按以下顺序搜索：
+
+1. **绝对路径**（Unix: `/path/to/file.hpl`, Windows: `C:\path\to\file.hpl`）
+2. **相对当前文件目录**（如 `subdir/utils.hpl`）
+3. **相对当前工作目录**（程序运行时的目录）
+4. **HPL_MODULE_PATHS 中的路径**（标准库和用户库目录）
+
+### 2.2 路径示例
+
+```yaml
+# 同级目录
+includes:
+  - utils.hpl
+
+# 子目录
+includes:
+  - lib/helpers.hpl
+  - modules/math/utils.hpl
+
+# 父目录
+includes:
+  - ../common.hpl
+  - ../../shared/base.hpl
+
+# 绝对路径（不推荐，降低可移植性）
+includes:
+  - /home/user/hpl_libs/utils.hpl
+  - C:\HPL\Libs\utils.hpl
+```
+
+### 2.3 函数复用
+
+被包含文件中的函数定义会自动合并到当前文件，可以直接调用：
+
+**utils.hpl**:
+```yaml
+greet: (name) => {
+    echo "Hello, " + name + "!"
+  }
+
+calculate: (a, b) => {
+    return a + b
+  }
+```
+
+**main.hpl**:
+```yaml
+includes:
+  - utils.hpl
+
+main: () => {
+    greet("World")           # 调用 include 的函数
+    result = calculate(5, 3)  # result = 8
+    echo "Result: " + result
+  }
+
+call: main()
+```
+
+### 2.4 错误处理
+
+当 include 文件不存在时，HPL 会显示警告信息：
+
+```
+Warning: Include file 'missing.hpl' not found in any search path
+Warning: Failed to include 'broken.hpl': [错误详情]
+```
+
+
+## 3. 模块导入（imports）
+
 
 使用 `imports` 关键字可以导入标准库模块或第三方 Python 模块，扩展语言功能。
 
@@ -66,17 +140,8 @@ main: () => {
   }
 ```
 
-**重要提示**：别名必须使用 YAML 字典格式 `module: alias`，以下格式**不支持**：
-```yaml
-# ❌ 错误格式
-imports:
-  - math as m
-  - my_python_module as mp
-```
+## 4. 类定义（classes）
 
-
-
-## 3. 类定义（classes）
 
 类使用 YAML 的映射结构定义。类可以继承其他类，支持方法定义。
 
@@ -125,7 +190,39 @@ classes:
 - 使用 `parent: BaseClass` 指定继承关系。
 - 子类可以调用父类方法，使用 `this.methodName()`。
 
-## 4. 对象实例化（objects）
+### 构造函数
+
+HPL 支持使用 `init` 或 `__init__` 作为构造函数名（推荐使用简化的 `init`）：
+
+```yaml
+classes:
+  Shape:
+    # 使用简化的 init 作为构造函数名
+    init: (name) => {
+        this.name = name
+      }
+    
+    getName: () => {
+        return this.name
+      }
+
+  Rectangle:
+    parent: Shape
+    init: (width, height) => {
+        # 调用父类构造函数
+        this.parent.init("矩形")
+        this.width = width
+        this.height = height
+      }
+```
+
+- 构造函数在对象实例化时自动调用
+- 支持 `init` 和 `__init__` 两种形式（`init` 是 `__init__` 的别名）
+- 子类可以通过 `this.parent.init(...)` 调用父类构造函数
+
+
+## 5. 对象实例化（objects）
+
 
 对象通过类实例化，使用构造函数语法。
 
@@ -137,7 +234,8 @@ objects:
 - `objectName`：对象名。
 - `ClassName()`：调用类的构造函数（假设有默认构造函数）。
 
-## 5. 控制流
+## 6. 控制流
+
 
 HPL 支持基本的控制流结构，使用冒号和缩进表示代码块。
 
@@ -153,15 +251,50 @@ else :
 - 条件：如 `i % 2 == 0`。
 - 使用冒号 `:` 表示代码块开始，后续代码缩进。
 
-### 循环语句（for）
+### 循环语句（for in）
+
+HPL 使用 `for in` 语法进行循环迭代，支持遍历范围、数组、字典和字符串。
 
 ```yaml
-for (initialization; condition; increment) :
+for (variable in iterable) :
   code
 ```
 
-- 示例：`for (i = 0; i < count; i++) :`
+- **基本语法**：`for (i in range(5)) :`
+- **遍历数组**：`for (item in arr) :`
+- **遍历字典**：`for (key in dict) :`（遍历字典的键）
+- **遍历字符串**：`for (char in str) :`（遍历字符串的每个字符）
 - 循环体使用缩进表示。
+
+#### 支持的迭代对象
+
+1. **range 函数**：`range(n)` 生成 0 到 n-1 的整数序列
+   ```yaml
+   for (i in range(5)) :
+     echo i  # 输出 0, 1, 2, 3, 4
+   ```
+
+2. **数组**：直接遍历数组元素
+   ```yaml
+   arr = [10, 20, 30]
+   for (item in arr) :
+     echo item  # 输出 10, 20, 30
+   ```
+
+3. **字典**：遍历字典的键
+   ```yaml
+   person = {"name": "Alice", "age": 30}
+   for (key in person) :
+     echo key  # 输出 "name", "age"
+   ```
+
+4. **字符串**：遍历每个字符
+   ```yaml
+   text = "Hello"
+   for (char in text) :
+     echo char  # 输出 H, e, l, l, o
+   ```
+
 
 ### while 循环
 
@@ -196,16 +329,20 @@ while (true) :
   i++
 
 # continue 示例
-for (i = 0; i < 5; i++) :
+for (i in range(5)) :
   if (i == 2) :
     continue  # 跳过 i == 2 的情况
   echo "i = " + i
+
 ```
 
 
-## 6. 异常处理（try-catch）
+## 7. 异常处理（try-catch 和 throw）
 
-使用 try-catch 块处理异常。
+
+使用 try-catch 块处理异常，使用 throw 语句抛出异常。
+
+### try-catch 基本用法
 
 ```yaml
 try :
@@ -217,7 +354,41 @@ catch (error) :
 - `error`：捕获的异常变量。
 - 使用冒号和缩进表示代码块。
 
-## 7. 内置函数和操作符
+### throw 语句
+
+使用 `throw` 语句主动抛出异常：
+
+```yaml
+try :
+  if (x == 0) :
+    throw "除数不能为零"
+  result = 10 / x
+catch (error) :
+  echo "错误: " + error
+```
+
+- `throw` 后面可以跟任意表达式，表达式的值将被转换为字符串作为错误信息
+- 如果没有提供表达式，将抛出默认错误信息 "Exception thrown"
+- throw 语句只能在 try-catch 块中使用（或任何会被捕获的地方）
+
+### 嵌套异常处理
+
+```yaml
+try :
+  echo "外层 try 开始"
+  try :
+    echo "内层 try"
+    throw "内层错误"
+  catch (innerError) :
+    echo "内层捕获: " + innerError
+  echo "外层 try 继续"
+catch (outerError) :
+  echo "外层捕获: " + outerError
+```
+
+
+## 8. 内置函数和操作符
+
 
 ### 内置函数
 
@@ -225,9 +396,8 @@ catch (error) :
   - 示例：`echo "Hello"` 或 `echo variable`
   - 注意：括号是可选的
 
-
-
 - `len(array_or_string)`：获取数组长度或字符串长度
+
   - 示例：`len([1, 2, 3])` → `3`，`len("hello")` → `5`
 
 - `int(value)`：将值转换为整数
@@ -257,13 +427,15 @@ catch (error) :
 
 ### 算术操作符
 
-- `+`：加法（支持数值加法和字符串拼接）
+- `+`：加法（支持数值加法、字符串拼接和**数组拼接**）
   - 如果两边都是数字，执行数值加法：`10 + 20` → `30`
+  - 如果两边都是数组，执行数组拼接：`[1, 2] + [3, 4]` → `[1, 2, 3, 4]`
   - 否则执行字符串拼接：`"Hello" + "World"` → `"HelloWorld"`
 - `-`：减法（仅支持数值）
 - `*`：乘法（仅支持数值）
 - `/`：除法（仅支持数值）
 - `%`：取模（仅支持数值）
+
 
 ### 比较操作符
 - `==`：等于
@@ -294,7 +466,8 @@ catch (error) :
 
 
 
-## 8. 注释
+## 9. 注释
+
 
 HPL 支持使用 `#` 开头的单行注释。
 
@@ -316,15 +489,20 @@ classes:
 - 注释可以出现在代码的任何位置
 - 注释内容会被解释器忽略
 
-## 9. 数据类型
+## 10. 数据类型
+
 
 ### 整数（Integer）
 
 - 示例：`42`, `0`, `-10`
 
 ### 浮点数（Float）
+
 - 支持小数表示
 - 示例：`3.14`, `-0.5`, `2.0`
+- 支持科学计数法：`1.5e10`, `-2.5e-3`
+- 整数和浮点数混合运算时，结果自动提升为浮点数
+
 
 ### 字符串（String）
 - 使用双引号包围
@@ -339,6 +517,11 @@ classes:
 ### 布尔值（Boolean）
 - `true` 或 `false`
 - 示例：`flag = true`, `if (false) :`
+
+### 空值（Null）
+- `null`
+- 表示空值或未定义值
+- 示例：`value = null`, `if (value == null) :`
 
 ### 数组（Array）
 - 使用方括号 `[]` 定义数组字面量
@@ -358,14 +541,54 @@ second = arr[1]  # 获取第二个元素
 arr[0] = 100  # 修改第一个元素
 ```
 
+
 - 数组可以包含不同类型的元素：
 ```yaml
 mixed = [1, "hello", true, 3.14]
 ```
 
+### 字典/映射（Dictionary/Map）
+
+- 使用花括号 `{}` 定义字典字面量
+- 键必须是字符串，值可以是任意类型
+- 使用 `dict[key]` 语法访问字典元素
+- 支持字典元素赋值：`dict[key] = value`
+
+```yaml
+# 字典定义
+person = {
+  "name": "Alice",
+  "age": 30,
+  "is_student": false
+}
+
+# 字典访问
+name = person["name"]  # 获取值 "Alice"
+age = person["age"]   # 获取值 30
+
+# 字典元素赋值
+person["age"] = 31
+person["city"] = "Beijing"  # 添加新键值对
+```
+
+- 字典可以嵌套：
+```yaml
+nested = {
+  "user": {
+    "name": "Bob",
+    "contacts": {
+      "email": "bob@example.com"
+    }
+  }
+}
+email = nested["user"]["contacts"]["email"]
+```
 
 
-## 10. 返回值
+
+
+## 11. 返回值
+
 
 
 方法可以使用 `return` 语句返回值。
@@ -388,7 +611,8 @@ main: () => {
   }
 ```
 
-## 11. 主函数和调用
+## 12. 主函数和调用
+
 
 ### 基本用法
 
@@ -423,7 +647,8 @@ call: greet("World")   # 输出: Hello, World!
 - 如果未指定 `call`，默认执行 `main` 函数（如果存在）
 
 
-## 12. 完整示例程序分析
+## 13. 完整示例程序分析
+
 
 
 基于 `example.hpl`：
@@ -439,12 +664,13 @@ classes:
         this.print("Hello World")
       }
     showmessages: (count) => {
-        for (i = 0; i < count; i++) :
+        for (i in range(count)) :
           if (i % 2 == 0) :
             this.print("Even: Hello World " + i)
           else :
             this.print("Odd: Hello World " + i)
       }
+
 
 objects:
   printer: MessagePrinter()
@@ -475,27 +701,27 @@ call: main()
 6. **对象实例化**：`printer: MessagePrinter()` 创建对象。
 7. **程序执行**：`main` 函数中调用对象方法，`call: main()` 启动程序。
 
-## 13. 新特性综合示例
+## 14. 新特性综合示例
+
 
 以下示例展示了 HPL 的新特性，包括 while 循环、逻辑运算符、break/continue、数组和内置函数：
 
 ```yaml
 classes:
   FeatureDemo:
-    # 演示 while 循环和 break/continue
+    # 演示 for in 循环和 break/continue
     demo_loop: () => {
-        echo "=== While Loop Demo ==="
-        i = 0
+        echo "=== For In Loop Demo ==="
         sum = 0
-        while (i < 10) :
-          i++
+        for (i in range(10)) :
           if (i == 3) :
             continue  # 跳过 3
           if (i == 7) :
             break     # 在 7 时退出
           sum = sum + i
-        echo "Sum (1+2+4+5+6): " + sum
+        echo "Sum (0+1+2+4+5+6): " + sum
       }
+
     
     # 演示逻辑运算符
     demo_logic: () => {
@@ -577,7 +803,8 @@ call: main()
    - `int()`/`str()`：类型转换
 
 
-## 14. 类型检查和错误处理
+## 15. 类型检查和错误处理
+
 
 
 
@@ -595,7 +822,8 @@ HPL 解释器现在包含类型检查，提供清晰的错误信息：
 - **方法未找到**：调用不存在的方法时会报错
   - 示例：`obj.nonexistent()` → `ValueError: Method 'nonexistent' not found in class 'ClassName'`
 
-## 15. 注意事项
+## 16. 注意事项
+
 
 - HPL 基于 YAML，因此缩进至关重要（建议使用 2 个空格）。
 - 缩进规则：
@@ -617,13 +845,11 @@ HPL 解释器现在包含类型检查，提供清晰的错误信息：
 
 
 
-## 16. 可用标准库模块
+## 17. 标准库参考 (Standard Library Reference)
 
-关于模块导入的详细语法（包括基本语法、别名导入、错误格式等），请参考 [2.1 模块导入（imports）](#21-模块导入imports)。
+关于模块导入的详细语法（包括基本语法、别名导入、错误格式等），请参考 [3. 模块导入（imports）](#3-模块导入imports)。
 
-### 可用标准库模块列表
-
-
+### 17.0 可用标准库模块列表
 
 | 模块名 | 描述 |
 |--------|------|
@@ -633,8 +859,6 @@ HPL 解释器现在包含类型检查，提供清晰的错误信息：
 | `os` | 操作系统接口 |
 | `time` | 日期时间处理 |
 
-
-## 17. 标准库参考 (Standard Library Reference)
 
 ### 17.1 math 模块 - 数学函数
 
@@ -651,41 +875,54 @@ HPL 解释器现在包含类型检查，提供清晰的错误信息：
 #### 函数
 
 **基本运算**
-- `math.sqrt(x)` - 平方根
-- `math.pow(base, exp)` - 幂运算
-- `math.abs(x)` - 绝对值（也可作为内置函数使用）
-- `math.max(a, b, ...)` - 最大值（也可作为内置函数使用）
-- `math.min(a, b, ...)` - 最小值（也可作为内置函数使用）
+| 函数 | 参数 | 返回值 | 说明 |
+|------|------|--------|------|
+| `math.sqrt(x)` | number | float | 平方根 |
+| `math.pow(base, exp)` | number, number | float | 幂运算 |
+| `math.abs(x)` | number | number | 绝对值（也可作为内置函数使用） |
+| `math.max(a, b, ...)` | number... | number | 最大值（也可作为内置函数使用） |
+| `math.min(a, b, ...)` | number... | number | 最小值（也可作为内置函数使用） |
 
 **三角函数**
-- `math.sin(x)` - 正弦（弧度）
-- `math.cos(x)` - 余弦（弧度）
-- `math.tan(x)` - 正切（弧度）
-- `math.asin(x)` - 反正弦
-- `math.acos(x)` - 反余弦
-- `math.atan(x)` - 反正切
-- `math.atan2(y, x)` - 带象限的反正切
+| 函数 | 参数 | 返回值 | 说明 |
+|------|------|--------|------|
+| `math.sin(x)` | number (弧度) | float | 正弦 |
+| `math.cos(x)` | number (弧度) | float | 余弦 |
+| `math.tan(x)` | number (弧度) | float | 正切 |
+| `math.asin(x)` | number (-1~1) | float (弧度) | 反正弦 |
+| `math.acos(x)` | number (-1~1) | float (弧度) | 反余弦 |
+| `math.atan(x)` | number | float (弧度) | 反正切 |
+| `math.atan2(y, x)` | number, number | float (弧度) | 带象限的反正切，处理 y/x 的符号 |
 
 **对数和指数**
-- `math.log(x, base)` - 对数（base 可选，默认自然对数）
-- `math.log10(x)` - 常用对数（以10为底）
-- `math.exp(x)` - e^x
+| 函数 | 参数 | 返回值 | 说明 |
+|------|------|--------|------|
+| `math.log(x, base?)` | number, number? | float | 对数，base 可选，默认自然对数 e |
+| `math.log10(x)` | number | float | 常用对数（以10为底） |
+| `math.exp(x)` | number | float | e 的 x 次幂 |
 
 **数值处理**
-- `math.floor(x)` - 向下取整
-- `math.ceil(x)` - 向上取整
-- `math.round(x, ndigits)` - 四舍五入（ndigits 可选）
-- `math.trunc(x)` - 截断小数部分
-- `math.factorial(n)` - 阶乘
-- `math.gcd(a, b)` - 最大公约数
+| 函数 | 参数 | 返回值 | 说明 |
+|------|------|--------|------|
+| `math.floor(x)` | number | int | 向下取整 |
+| `math.ceil(x)` | number | int | 向上取整 |
+| `math.round(x, ndigits?)` | number, int? | number | 四舍五入，ndigits 指定小数位数 |
+| `math.trunc(x)` | number | int | 截断小数部分 |
+| `math.factorial(n)` | int (≥0) | int | 阶乘 |
+| `math.gcd(a, b)` | int, int | int | 最大公约数 |
 
 **角度转换**
-- `math.degrees(x)` - 弧度转角度
-- `math.radians(x)` - 角度转弧度
+| 函数 | 参数 | 返回值 | 说明 |
+|------|------|--------|------|
+| `math.degrees(x)` | number (弧度) | float | 弧度转角度 |
+| `math.radians(x)` | number (角度) | float | 角度转弧度 |
 
 **特殊函数**
-- `math.is_nan(x)` - 检查是否为 NaN
-- `math.is_inf(x)` - 检查是否为无穷大
+| 函数 | 参数 | 返回值 | 说明 |
+|------|------|--------|------|
+| `math.is_nan(x)` | number | boolean | 检查是否为 NaN |
+| `math.is_inf(x)` | number | boolean | 检查是否为无穷大 |
+
 
 
 ### 17.2 io 模块 - 文件操作
@@ -847,6 +1084,8 @@ main: () => {
 
 call: main()
 ```
+
+
 
 
 此手册涵盖了 HPL 的所有核心语法特性，包括基础特性、新增强特性和标准库模块系统。
