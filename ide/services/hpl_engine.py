@@ -156,9 +156,11 @@ class HPLEngine:
         
         try:
             # 复制include文件到临时目录
+            # P3修复：传递original_file参数以支持子目录include解析
             copied_files, _, not_found = copy_include_files(
-                self.source_code, temp_dir, current_file=self.current_file
+                self.source_code, temp_dir, current_file=temp_file, original_file=self.current_file
             )
+
             if not_found:
                 logger.warning(f"解析时未找到的include文件: {', '.join(not_found)}")
             
