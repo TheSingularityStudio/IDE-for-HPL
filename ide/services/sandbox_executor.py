@@ -6,14 +6,24 @@
 
 import os
 import sys
-import resource
-import signal
 import multiprocessing
 import logging
 import tempfile
 import shutil
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
+
+# Unix-specific modules - not available on Windows
+try:
+    import resource
+except ImportError:
+    resource = None
+
+try:
+    import signal
+except ImportError:
+    signal = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +56,12 @@ class SandboxExecutor:
         设置当前进程的资源限制
         在子进程中调用
         """
+        # Windows不支持Unix资源限制
+        if resource is None:
+            logger.warning("当前平台不支持Unix资源限制（resource模块不可用）")
+            self._setup_complete = False
+            return
+        
         try:
             # 内存限制（地址空间）
             max_memory_bytes = self.limits.max_memory_mb * 1024 * 1024
@@ -100,6 +116,7 @@ class SandboxExecutor:
         except Exception as e:
             logger.error(f"设置资源限制失败: {e}")
             raise
+
     
     def _execute_target(self, file_path: str,
                        result_queue: multiprocessing.Queue,
@@ -224,10 +241,14 @@ class SandboxExecutor:
                 if process.is_alive():
                     # 强制杀死
                     try:
-                        os.kill(process.pid, signal.SIGKILL)
+                        if signal is not None:
+                            os.kill(process.pid, signal.SIGKILL)
+                        else:
+                            process.kill()
                     except:
                         pass
                     process.join(1)
+
                 
                 return {
                     'success': False,
