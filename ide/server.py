@@ -32,7 +32,7 @@ from config import (
     MAX_REQUEST_SIZE, MAX_EXECUTION_TIME, ALLOWED_EXAMPLES_DIR
 )
 from routes import register_all_routes
-from ide.services.code_executor import check_runtime_available
+from ide.services.runtime_manager import check_runtime_available
 
 
 # 配置日志
