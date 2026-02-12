@@ -1,5 +1,0 @@
-main: () => {
-  echo undefined_variable
-}
-
-call: main()
