@@ -13,25 +13,11 @@ import pickle
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 
+# 导入统一的运行时管理器（P0修复）
+from ide.services.runtime_manager import check_runtime_available, get_runtime_manager
+
 # 配置日志
 logger = logging.getLogger(__name__)
-
-# 运行时可用性检查
-_hpl_runtime_available = None
-
-
-def check_runtime_available() -> bool:
-    """检查 hpl_runtime 是否可用"""
-    global _hpl_runtime_available
-    if _hpl_runtime_available is None:
-        try:
-            import hpl_runtime
-            _hpl_runtime_available = True
-            logger.info("hpl-runtime 已加载")
-        except ImportError:
-            _hpl_runtime_available = False
-            logger.warning("hpl-runtime 未安装")
-    return _hpl_runtime_available
 
 
 @dataclass
@@ -96,7 +82,7 @@ class HPLEngine:
         self._parse_result: Optional[Tuple] = None
         self._cache = ParseCache() if use_cache else None
         
-        # 检查运行时可用性
+        # P0修复：使用统一的运行时检查
         self._runtime_available = check_runtime_available()
         if not self._runtime_available:
             raise ImportError("hpl_runtime 不可用，无法创建 HPLEngine")
@@ -409,22 +395,50 @@ class HPLEngine:
         Returns:
             Dict: 调试结果
         """
-        if not self.current_file or self.current_file == "<memory>":
-            # 调试模式需要文件路径，创建临时文件
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.hpl',
-                                             delete=False, encoding='utf-8') as f:
-                f.write(self.source_code or "")
-                temp_file = f.name
+        # P0修复：修复临时文件变量作用域问题
+        temp_file = None
+        temp_dir = None
+        file_to_debug = None
+        
+        try:
+            if not self.current_file or self.current_file == "<memory>":
+                # 调试模式需要文件路径，创建临时目录和文件
+                temp_dir = tempfile.mkdtemp(prefix='hpl_debug_')
+                temp_file = os.path.join(temp_dir, 'debug_temp.hpl')
+                
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    f.write(self.source_code or "")
+                
+                file_to_debug = temp_file
+                logger.info(f"创建调试临时文件: {temp_file}")
+            else:
+                file_to_debug = self.current_file
             
-            try:
-                return self._debug_file(temp_file, call_target, call_args)
-            finally:
+            return self._debug_file(file_to_debug, call_target, call_args)
+            
+        except Exception as e:
+            logger.error(f"调试准备失败: {e}")
+            return {
+                'success': False,
+                'error': f"调试准备失败: {str(e)}",
+                'debug_info': {}
+            }
+        finally:
+            # P0修复：统一清理临时文件和目录
+            if temp_file and os.path.exists(temp_file):
                 try:
                     os.unlink(temp_file)
-                except:
-                    pass
-        else:
-            return self._debug_file(self.current_file, call_target, call_args)
+                    logger.debug(f"清理临时文件: {temp_file}")
+                except Exception as e:
+                    logger.warning(f"清理临时文件失败: {temp_file}, 错误: {e}")
+            
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    import shutil
+                    shutil.rmtree(temp_dir)
+                    logger.debug(f"清理临时目录: {temp_dir}")
+                except Exception as e:
+                    logger.warning(f"清理临时目录失败: {temp_dir}, 错误: {e}")
     
     def _debug_file(self, file_path: str, call_target: Optional[str] = None,
                     call_args: Optional[List] = None) -> Dict[str, Any]:

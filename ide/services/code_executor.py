@@ -12,12 +12,11 @@ import logging
 from typing import Dict, List, Any, Optional
 
 # 导入核心引擎
-try:
-    from ide.services.hpl_engine import HPLEngine, execute_code as engine_execute_code, debug_code as engine_debug_code
-    from ide.services.hpl_engine import check_runtime_available
-    _engine_available = True
-except ImportError:
-    _engine_available = False
+from ide.services.hpl_engine import HPLEngine, execute_code as engine_execute_code, debug_code as engine_debug_code
+
+# 导入统一的运行时管理器（P0修复：统一运行时检查）
+from ide.services.runtime_manager import check_runtime_available, get_runtime_manager
+
 
 # 导入调试服务
 try:
@@ -29,21 +28,9 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def check_runtime_available():
-    """
-    检查hpl_runtime是否可用
-    
-    Returns:
-        bool: 是否可用
-    """
-    if not _engine_available:
-        return False
-    
-    try:
-        import hpl_runtime
-        return True
-    except ImportError:
-        return False
+# 注意：check_runtime_available 现在从 runtime_manager 统一导入
+# 本地实现已删除，确保所有模块使用一致的检查逻辑
+
 
 
 def execute_hpl(file_path, debug_mode: bool = False,
@@ -62,7 +49,8 @@ def execute_hpl(file_path, debug_mode: bool = False,
     Returns:
         dict: 执行结果，包含success、output、error等字段
     """
-    if not _engine_available:
+    # P0修复：使用统一的运行时检查
+    if not check_runtime_available():
         return {
             'success': False,
             'error': 'hpl_runtime 不可用，无法执行代码',
@@ -129,7 +117,8 @@ def execute_hpl_code(code: str, debug_mode: bool = False,
     Returns:
         dict: 执行结果
     """
-    if not _engine_available:
+    # P0修复：使用统一的运行时检查
+    if not check_runtime_available():
         return {
             'success': False,
             'error': 'hpl_runtime 不可用，无法执行代码',
