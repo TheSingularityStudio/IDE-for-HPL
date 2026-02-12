@@ -272,8 +272,29 @@ const HPLApp = {
             return;
         }
         
+        // 检查是否为HPL文件，如果是则进行语法错误预验证
+        const currentFile = HPLFileManager.getCurrentFile();
+        const isHPLFile = currentFile && currentFile.toLowerCase().endsWith('.hpl');
+        
+        if (isHPLFile && typeof HPLDiagnostics !== 'undefined') {
+            const markers = HPLDiagnostics.getCurrentMarkers();
+            const hasErrors = markers.some(m => m.severity === monaco.MarkerSeverity.Error);
+            
+            if (hasErrors) {
+                const errorCount = markers.filter(m => m.severity === monaco.MarkerSeverity.Error).length;
+                const confirmRun = confirm(`代码存在 ${errorCount} 个语法错误，确定要执行吗？\n\n提示：执行有语法错误的代码可能会浪费服务器资源。`);
+                if (!confirmRun) {
+                    HPLUI.showOutput('已取消执行，请先修复语法错误', 'info');
+                    // 切换到问题面板显示错误
+                    HPLUI.switchPanel('problems');
+                    return;
+                }
+            }
+        }
+        
         // 清除之前的错误高亮
         HPLEditor.clearErrorHighlights();
+
         
         this.isRunning = true;
         HPLUI.updateRunButtonState(true);

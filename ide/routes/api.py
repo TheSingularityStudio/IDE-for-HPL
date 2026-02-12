@@ -7,9 +7,9 @@ import os
 import shutil
 import tempfile
 import logging
+import json
 from datetime import datetime
-from flask import Flask, request, jsonify
-
+from flask import Flask, request, jsonify, Response, stream_with_context
 
 from config import (
     MAX_REQUEST_SIZE, MAX_EXECUTION_TIME, 
@@ -18,11 +18,23 @@ from config import (
 )
 
 
-from utils.helpers import execute_with_timeout, TimeoutException
-from services.security import limit_request_size, validate_path, is_safe_filename
-from services.code_processor import clean_code, copy_include_files
-from services.code_executor import execute_hpl, check_runtime_available
-from services.syntax_validator import validate_code
+# P0修复：使用新的执行工具（进程隔离 + 资源限制）
+from ide.utils.execution_utils import execute_with_process_timeout, ExecutionTimeoutError
+from ide.services.sandbox_executor import execute_in_sandbox, execute_code_in_sandbox
+from ide.utils.temp_manager import temp_directory, TempManager
+
+from ide.services.security import limit_request_size, validate_path, is_safe_filename
+
+from ide.services.code_processor import clean_code, copy_include_files
+
+# P0修复：从统一运行时管理器导入
+from ide.services.runtime_manager import check_runtime_available
+
+from ide.services.syntax_validator import validate_code
+
+# P1修复：导入流式执行
+from ide.services.hpl_engine import execute_code_streaming
+
 
 
 
@@ -43,8 +55,8 @@ def register_api_routes(app: Flask):
         """
         执行 HPL 代码
         接收代码字符串，保存到临时文件并执行
-        添加超时限制防止无限循环
-        自动处理 include 文件复制
+        P0修复：使用进程隔离和资源限制
+        P1修复：支持input_data参数
         """
         # 检查 hpl_runtime 是否可用
         if not check_runtime_available():
@@ -56,6 +68,16 @@ def register_api_routes(app: Flask):
         
         code = request.form.get('code', '')
         
+        # P1修复：获取输入数据
+        input_data = request.form.get('input_data', None)
+        if input_data:
+            try:
+                # 尝试解析为JSON（支持数组或字符串）
+                input_data = json.loads(input_data)
+            except json.JSONDecodeError:
+                # 如果不是JSON，作为普通字符串处理
+                pass
+        
         if not code.strip():
             return jsonify({
                 'success': False,
@@ -65,51 +87,105 @@ def register_api_routes(app: Flask):
         # 清理代码中的转义字符
         code = clean_code(code)
         
-        # 创建临时文件
-        temp_file = None
-        temp_dir = None
+        # P0修复：使用TempManager上下文管理器确保清理
         try:
-            # 创建临时目录（用于存放 include 文件）
-            temp_dir = tempfile.mkdtemp(prefix='hpl_')
-            
-            # 复制 include 文件到临时目录
-            temp_include_files, code, not_found_includes = copy_include_files(code, temp_dir)
-            
-            # 如果有未找到的 include 文件，记录警告
-            if not_found_includes:
-                logger.warning(f"未找到的 include 文件: {', '.join(not_found_includes)}")
+            with temp_directory(prefix='hpl_exec_') as temp_dir:
+                # 复制 include 文件到临时目录
+                temp_include_files, code, not_found_includes = copy_include_files(code, temp_dir)
+                
+                # 如果有未找到的 include 文件，记录警告
+                if not_found_includes:
+                    logger.warning(f"未找到的 include 文件: {', '.join(not_found_includes)}")
 
-            # 创建临时 HPL 文件（在临时目录中，以便正确解析 includes）
-            temp_file = os.path.join(temp_dir, 'main.hpl')
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                f.write(code)
-            
-            logger.info(f"执行临时文件: {temp_file}")
-            
-            # 执行 HPL 代码（带超时）
-            result = execute_with_timeout(execute_hpl, MAX_EXECUTION_TIME, temp_file)
-            return jsonify(result)
-            
-        except TimeoutException as e:
-            logger.warning(f"执行超时: {str(e)}")
-            return jsonify({
-                'success': False,
-                'error': f'执行超时: 代码运行超过 {MAX_EXECUTION_TIME} 秒限制'
-            })
+                # 创建临时 HPL 文件
+                temp_file = os.path.join(temp_dir, 'main.hpl')
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    f.write(code)
+                
+                logger.info(f"执行临时文件: {temp_file}")
+                
+                # P0修复：使用沙箱执行（带资源限制和进程隔离）
+                # P1修复：传递input_data
+                result = execute_in_sandbox(
+                    temp_file,
+                    timeout=MAX_EXECUTION_TIME,
+                    max_memory_mb=100,  # 100MB内存限制
+                    max_cpu_time=MAX_EXECUTION_TIME,  # CPU时间限制
+                    input_data=input_data
+                )
+                
+                return jsonify(result)
+                
         except Exception as e:
-            logger.error(f"服务器错误: {str(e)}")
+            logger.error(f"服务器错误: {str(e)}", exc_info=True)
             return jsonify({
                 'success': False,
                 'error': f'服务器错误: {str(e)}'
             })
-        finally:
-            # 清理临时目录及所有文件
-            if temp_dir and os.path.exists(temp_dir):
-                try:
-                    shutil.rmtree(temp_dir)
-                    logger.info(f"清理临时目录: {temp_dir}")
-                except Exception as e:
-                    logger.error(f"清理临时目录失败: {temp_dir}, 错误: {e}")
+
+    @app.route('/api/run/stream', methods=['POST'])
+    @limit_request_size(MAX_REQUEST_SIZE)
+    def run_code_streaming():
+        """
+        P1修复：流式执行 HPL 代码
+        使用 Server-Sent Events (SSE) 实时返回输出
+        """
+        # 检查 hpl_runtime 是否可用
+        if not check_runtime_available():
+            return jsonify({
+                'success': False,
+                'error': 'hpl-runtime 未安装，无法执行代码',
+                'hint': '请运行: pip install hpl-runtime'
+            }), 503
+        
+        code = request.form.get('code', '')
+        
+        # 获取输入数据
+        input_data = request.form.get('input_data', None)
+        if input_data:
+            try:
+                input_data = json.loads(input_data)
+            except json.JSONDecodeError:
+                pass
+        
+        if not code.strip():
+            return jsonify({
+                'success': False,
+                'error': '代码为空'
+            })
+
+        # 清理代码
+        code = clean_code(code)
+        
+        def generate_stream():
+            """生成SSE流"""
+            try:
+                # 使用流式执行
+                for chunk in execute_code_streaming(code, input_data=input_data):
+                    # 将每个输出块转换为SSE格式
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+                # 发送结束标记
+                yield f"data: {json.dumps({'type': 'done', 'data': None})}\n\n"
+                
+            except Exception as e:
+                logger.error(f"流式执行错误: {e}")
+                error_chunk = {
+                    'type': 'error',
+                    'data': str(e),
+                    'error_type': type(e).__name__
+                }
+                yield f"data: {json.dumps(error_chunk)}\n\n"
+        
+        # 返回SSE响应
+        return Response(
+            stream_with_context(generate_stream()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'  # 禁用Nginx缓冲
+            }
+        )
 
     @app.route('/api/examples', methods=['GET'])
     def list_examples():
@@ -740,13 +816,27 @@ def register_api_routes(app: Flask):
     def health_check():
         """
         健康检查端点
+        P0修复：添加运行时状态和资源限制信息
         """
+        from ide.services.runtime_manager import get_runtime_info
+        
+        runtime_info = get_runtime_info()
+        
         return jsonify({
             'status': 'ok',
             'message': 'HPL IDE Server is running',
             'version': SERVER_VERSION,
             'max_execution_time': MAX_EXECUTION_TIME,
-            'max_request_size': MAX_REQUEST_SIZE
+            'max_request_size': MAX_REQUEST_SIZE,
+            'runtime': {
+                'available': runtime_info.get('available', False),
+                'version': runtime_info.get('version', 'unknown')
+            },
+            'resource_limits': {
+                'memory_mb': 100,  # 沙箱内存限制
+                'cpu_time': MAX_EXECUTION_TIME,
+                'file_size_mb': 10
+            }
         })
 
     # ==================== 文件备份 API ====================

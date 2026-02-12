@@ -433,9 +433,28 @@ const HPLDiagnostics = {
     },
     
     /**
+     * 检查当前是否存在错误
+     * @returns {boolean} 是否存在错误
+     */
+    hasErrors() {
+        return this.state.currentMarkers.some(m => m.severity === monaco.MarkerSeverity.Error);
+    },
+    
+    /**
+     * 获取错误统计信息
+     * @returns {Object} 包含错误和警告数量的对象
+     */
+    getErrorStats() {
+        const errors = this.state.currentMarkers.filter(m => m.severity === monaco.MarkerSeverity.Error).length;
+        const warnings = this.state.currentMarkers.filter(m => m.severity === monaco.MarkerSeverity.Warning).length;
+        return { errors, warnings, total: errors + warnings };
+    },
+    
+    /**
      * 销毁诊断模块
      */
     dispose() {
+
         if (this.state.pendingCheck) {
             clearTimeout(this.state.pendingCheck);
         }

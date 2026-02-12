@@ -1,17 +1,22 @@
 """
 调试服务
 提供高级调试功能，集成 hpl_runtime 的 DebugInterpreter
+基于 HPLEngine 实现统一的调试接口
 """
 
-import sys
 import os
+import sys
 import logging
-import tempfile
 import time
-from typing import Dict, List, Any, Optional, Set, Callable
+from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, field
 
-from config import PROJECT_ROOT, ALLOWED_EXAMPLES_DIR
+# 导入核心引擎
+try:
+    from ide.services.hpl_engine import HPLEngine, check_runtime_available
+    _engine_available = True
+except ImportError:
+    _engine_available = False
 
 logger = logging.getLogger(__name__)
 
@@ -20,64 +25,36 @@ logger = logging.getLogger(__name__)
 class Breakpoint:
     """断点信息"""
     line: int
-    condition: Optional[str] = None  # 条件表达式（可选）
+    condition: Optional[str] = None
     enabled: bool = True
     hit_count: int = 0
 
 
 @dataclass
-class VariableSnapshot:
-    """变量快照"""
-    line: int
-    local_scope: Dict[str, Any] = field(default_factory=dict)
-    global_scope: Dict[str, Any] = field(default_factory=dict)
-    timestamp: float = field(default_factory=time.time)
-
-
-@dataclass
 class ExecutionTraceEntry:
     """执行跟踪条目"""
-    event_type: str  # FUNCTION_CALL, FUNCTION_RETURN, VARIABLE_ASSIGN, ERROR_CATCH
+    event_type: str
     line: Optional[int]
     details: Dict[str, Any]
     timestamp: float
 
 
-@dataclass
-class FunctionStats:
-    """函数执行统计"""
-    name: str
-    calls: int = 0
-    total_time: float = 0.0
-    min_time: float = float('inf')
-    max_time: float = 0.0
-
-
 class HPLDebugService:
-    """HPL 调试服务"""
+    """
+    HPL 调试服务
+    基于 HPLEngine 提供调试功能
+    """
     
     def __init__(self):
         self.breakpoints: Dict[int, Breakpoint] = {}
         self.current_file: Optional[str] = None
         self.is_debugging: bool = False
         self.on_breakpoint_hit: Optional[Callable[[int, Dict], None]] = None
-        self._trace_history: List[ExecutionTraceEntry] = []
-        self._variable_history: List[VariableSnapshot] = []
-        self._function_stats: Dict[str, FunctionStats] = {}
-        self._current_function: Optional[str] = None
-        self._function_start_time: Optional[float] = None
         
-        # 检查 hpl_runtime 可用性
-        self._runtime_available = self._check_runtime()
-    
-    def _check_runtime(self) -> bool:
-        """检查 hpl_runtime 是否可用"""
-        try:
-            from hpl_runtime import DebugInterpreter
-            return True
-        except ImportError:
+        # 检查运行时可用性
+        self._runtime_available = check_runtime_available() if _engine_available else False
+        if not self._runtime_available:
             logger.warning("hpl_runtime 不可用，调试功能将受限")
-            return False
     
     def set_breakpoint(self, line: int, condition: Optional[str] = None) -> bool:
         """
@@ -156,9 +133,8 @@ class HPLDebugService:
         
         # 检查条件
         if bp.condition and variables:
-            # 简单的条件评估（可以扩展）
             try:
-                # 这里可以实现更复杂的条件评估
+                # 简单的条件评估（可以扩展）
                 pass
             except Exception as e:
                 logger.error(f"评估断点条件失败: {e}")
@@ -167,7 +143,7 @@ class HPLDebugService:
         bp.hit_count += 1
         return True
     
-    def debug_file(self, file_path: str, 
+    def debug_file(self, file_path: str,
                    call_target: Optional[str] = None,
                    call_args: Optional[List] = None) -> Dict[str, Any]:
         """
@@ -196,106 +172,27 @@ class HPLDebugService:
             }
         
         self.current_file = file_path
-        self._trace_history.clear()
-        self._variable_history.clear()
-        self._function_stats.clear()
+        self.is_debugging = True
         
         try:
-            # 添加 examples 目录到 Python 模块搜索路径
-            if ALLOWED_EXAMPLES_DIR not in sys.path:
-                sys.path.insert(0, ALLOWED_EXAMPLES_DIR)
+            # 使用 HPLEngine 进行调试
+            engine = HPLEngine()
+            engine.load_file(file_path)
             
-            from hpl_runtime import DebugInterpreter, HPLSyntaxError, HPLRuntimeError
-            
-            # 创建调试解释器
-            interpreter = DebugInterpreter(debug_mode=True, verbose=True)
-            
-            # 执行
-            start_time = time.time()
-            result = interpreter.run(file_path, call_target=call_target, call_args=call_args)
-            total_time = time.time() - start_time
-            
-            # 处理调试信息
-            debug_info = result.get('debug_info', {})
-            
-            # 转换执行跟踪
-            execution_trace = debug_info.get('execution_trace', [])
-            self._trace_history = [
-                ExecutionTraceEntry(
-                    event_type=entry.get('type', 'UNKNOWN'),
-                    line=entry.get('line'),
-                    details=entry.get('details', {}),
-                    timestamp=entry.get('timestamp', 0)
-                )
-                for entry in execution_trace
-            ]
-            
-            # 转换变量快照
-            variable_snapshots = debug_info.get('variable_snapshots', [])
-            self._variable_history = [
-                VariableSnapshot(
-                    line=snapshot.get('line', 0),
-                    local_scope=snapshot.get('local_scope', {}),
-                    global_scope=snapshot.get('global_scope', {}),
-                    timestamp=snapshot.get('timestamp', 0)
-                )
-                for snapshot in variable_snapshots
-            ]
-            
-            # 分析函数统计
-            self._analyze_function_stats(execution_trace)
+            result = engine.debug(call_target=call_target, call_args=call_args)
             
             # 检查断点命中
-            breakpoint_hits = []
-            for entry in self._trace_history:
-                if entry.line and entry.line in self.breakpoints:
-                    if self.check_breakpoint(entry.line):
-                        breakpoint_hits.append({
-                            'line': entry.line,
-                            'event': entry.event_type,
-                            'details': entry.details
-                        })
-                        # 触发回调
-                        if self.on_breakpoint_hit:
-                            self.on_breakpoint_hit(entry.line, entry.details)
+            self._check_breakpoints_in_trace(result)
             
-            return {
-                'success': result.get('success', False),
-                'error': str(result.get('error')) if result.get('error') else None,
-                'execution_time': total_time,
-                'debug_info': {
-                    'execution_trace': [self._entry_to_dict(e) for e in self._trace_history],
-                    'variable_snapshots': [self._snapshot_to_dict(s) for s in self._variable_history],
-                    'breakpoint_hits': breakpoint_hits,
-                    'function_stats': {name: self._stats_to_dict(s) 
-                                      for name, s in self._function_stats.items()},
-                    'total_steps': len(self._trace_history),
-                    'report': debug_info.get('report', '')
-                }
-            }
+            # 计算覆盖率
+            if result.get('success'):
+                result['coverage'] = self._calculate_coverage(
+                    engine.source_code,
+                    result.get('debug_info', {}).get('execution_trace', [])
+                )
             
-        except HPLSyntaxError as e:
-            return {
-                'success': False,
-                'error': f"语法错误 (行 {e.line}, 列 {e.column}): {e.message}",
-                'line': e.line,
-                'column': e.column,
-                'error_key': getattr(e, 'error_key', None),
-                'debug_info': {}
-            }
-        except HPLRuntimeError as e:
-            return {
-                'success': False,
-                'error': f"运行时错误: {e.message}",
-                'line': getattr(e, 'line', None),
-                'column': getattr(e, 'column', None),
-                'call_stack': getattr(e, 'call_stack', []),
-                'error_key': getattr(e, 'error_key', None),
-                'debug_info': {
-                    'execution_trace': [self._entry_to_dict(e) for e in self._trace_history],
-                    'variable_snapshots': [self._snapshot_to_dict(s) for s in self._variable_history]
-                }
-            }
+            return result
+            
         except Exception as e:
             logger.error(f"调试执行失败: {e}", exc_info=True)
             return {
@@ -303,131 +200,155 @@ class HPLDebugService:
                 'error': f"调试执行失败: {str(e)}",
                 'debug_info': {}
             }
+        finally:
+            self.is_debugging = False
     
-    def _analyze_function_stats(self, execution_trace: List[Dict]):
-        """分析函数执行统计"""
-        current_function = None
-        function_start_time = None
+    def debug_code(self, code: str, file_path: Optional[str] = None,
+                   call_target: Optional[str] = None,
+                   call_args: Optional[List] = None) -> Dict[str, Any]:
+        """
+        调试执行 HPL 代码
         
-        for entry in execution_trace:
-            event_type = entry.get('type')
-            timestamp = entry.get('timestamp', 0)
-            details = entry.get('details', {})
+        Args:
+            code: HPL 源代码
+            file_path: 可选的文件路径
+            call_target: 可选的调用目标函数
+            call_args: 可选的调用参数
+        
+        Returns:
+            dict: 调试结果
+        """
+        if not self._runtime_available:
+            return {
+                'success': False,
+                'error': 'hpl_runtime 不可用，无法使用调试功能',
+                'debug_info': {}
+            }
+        
+        self.current_file = file_path or "<memory>"
+        self.is_debugging = True
+        
+        try:
+            # 使用 HPLEngine 进行调试
+            engine = HPLEngine()
+            engine.load_code(code, file_path)
             
-            if event_type == 'FUNCTION_CALL':
-                current_function = details.get('name')
-                function_start_time = timestamp
-                
-                if current_function not in self._function_stats:
-                    self._function_stats[current_function] = FunctionStats(name=current_function)
-                
-                self._function_stats[current_function].calls += 1
-                
-            elif event_type == 'FUNCTION_RETURN' and current_function:
-                duration = timestamp - function_start_time if function_start_time else 0
-                stats = self._function_stats[current_function]
-                stats.total_time += duration
-                stats.min_time = min(stats.min_time, duration)
-                stats.max_time = max(stats.max_time, duration)
-                
-                current_function = None
-                function_start_time = None
+            result = engine.debug(call_target=call_target, call_args=call_args)
+            
+            # 检查断点命中
+            self._check_breakpoints_in_trace(result)
+            
+            # 计算覆盖率
+            if result.get('success'):
+                result['coverage'] = self._calculate_coverage(
+                    code,
+                    result.get('debug_info', {}).get('execution_trace', [])
+                )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"调试执行失败: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error': f"调试执行失败: {str(e)}",
+                'debug_info': {}
+            }
+        finally:
+            self.is_debugging = False
     
-    def get_variable_at_line(self, line: int) -> Optional[VariableSnapshot]:
-        """
-        获取指定行的变量状态
+    def _check_breakpoints_in_trace(self, result: Dict[str, Any]):
+        """检查执行跟踪中的断点命中"""
+        trace = result.get('debug_info', {}).get('execution_trace', [])
+        breakpoint_hits = []
         
-        Args:
-            line: 行号
+        for entry in trace:
+            line = entry.get('line')
+            if line and line in self.breakpoints:
+                if self.check_breakpoint(line, entry.get('details', {})):
+                    breakpoint_hits.append({
+                        'line': line,
+                        'event': entry.get('type'),
+                        'details': entry.get('details', {})
+                    })
+                    # 触发回调
+                    if self.on_breakpoint_hit:
+                        self.on_breakpoint_hit(line, entry.get('details', {}))
         
-        Returns:
-            VariableSnapshot: 变量快照，如果没有则返回 None
-        """
-        for snapshot in reversed(self._variable_history):
-            if snapshot.line <= line:
-                return snapshot
-        return None
+        result['breakpoint_hits'] = breakpoint_hits
     
-    def get_execution_trace(self) -> List[ExecutionTraceEntry]:
-        """获取执行跟踪历史"""
-        return self._trace_history.copy()
-    
-    def get_function_stats(self) -> Dict[str, FunctionStats]:
-        """获取函数执行统计"""
-        return self._function_stats.copy()
-    
-    def get_coverage_info(self, source_code: str) -> Dict[str, Any]:
-        """
-        获取代码覆盖率信息
+    def _calculate_coverage(self, source_code: str, 
+                           execution_trace: List[Dict]) -> Dict[str, Any]:
+        """计算代码覆盖率"""
+        if not source_code:
+            return {
+                'executed_lines': [],
+                'total_lines': 0,
+                'coverage_percent': 0,
+                'uncovered_lines': []
+            }
         
-        Args:
-            source_code: 源代码字符串
-        
-        Returns:
-            dict: 覆盖率信息
-        """
         executed_lines = set()
-        for entry in self._trace_history:
-            if entry.line:
-                executed_lines.add(entry.line)
+        for entry in execution_trace:
+            line = entry.get('line')
+            if line:
+                executed_lines.add(line)
         
         total_lines = len(source_code.split('\n'))
+        all_lines = set(range(1, total_lines + 1))
         
         return {
             'executed_lines': sorted(executed_lines),
             'total_lines': total_lines,
             'coverage_percent': (len(executed_lines) / total_lines * 100) if total_lines > 0 else 0,
-            'uncovered_lines': sorted(set(range(1, total_lines + 1)) - executed_lines)
+            'uncovered_lines': sorted(all_lines - executed_lines)
         }
     
-    def step_back(self, steps: int = 1) -> Optional[ExecutionTraceEntry]:
+    def get_variable_at_line(self, line: int, 
+                            result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        获取指定行的变量状态
+        
+        Args:
+            line: 行号
+            result: 调试结果
+        
+        Returns:
+            dict: 变量快照，如果没有则返回 None
+        """
+        snapshots = result.get('debug_info', {}).get('variable_snapshots', [])
+        
+        for snapshot in reversed(snapshots):
+            if snapshot.get('line', 0) <= line:
+                return snapshot
+        
+        return None
+    
+    def step_back(self, result: Dict[str, Any], steps: int = 1) -> Optional[Dict[str, Any]]:
         """
         回退执行步骤（用于反向调试）
         
         Args:
+            result: 调试结果
             steps: 回退步数
         
         Returns:
-            ExecutionTraceEntry: 回退到的执行条目
+            dict: 回退到的执行条目
         """
-        if not self._trace_history:
+        trace = result.get('debug_info', {}).get('execution_trace', [])
+        
+        if not trace:
             return None
         
-        index = max(0, len(self._trace_history) - steps - 1)
-        return self._trace_history[index]
-    
-    def _entry_to_dict(self, entry: ExecutionTraceEntry) -> Dict[str, Any]:
-        """转换执行条目为字典"""
-        return {
-            'type': entry.event_type,
-            'line': entry.line,
-            'details': entry.details,
-            'timestamp': entry.timestamp
-        }
-    
-    def _snapshot_to_dict(self, snapshot: VariableSnapshot) -> Dict[str, Any]:
-        """转换变量快照为字典"""
-        return {
-            'line': snapshot.line,
-            'local_scope': snapshot.local_scope,
-            'global_scope': snapshot.global_scope,
-            'timestamp': snapshot.timestamp
-        }
-    
-    def _stats_to_dict(self, stats: FunctionStats) -> Dict[str, Any]:
-        """转换函数统计为字典"""
-        return {
-            'name': stats.name,
-            'calls': stats.calls,
-            'total_time': stats.total_time,
-            'avg_time': stats.total_time / stats.calls if stats.calls > 0 else 0,
-            'min_time': stats.min_time if stats.min_time != float('inf') else 0,
-            'max_time': stats.max_time
-        }
+        index = max(0, len(trace) - steps - 1)
+        return trace[index]
 
 
 class ErrorAnalyzer:
-    """错误分析器，提供错误上下文和修复建议"""
+    """
+    错误分析器，提供错误上下文和修复建议
+    基于 hpl_runtime 的 ErrorAnalyzer
+    """
     
     def __init__(self):
         self._runtime_available = self._check_runtime()
@@ -476,7 +397,6 @@ class ErrorAnalyzer:
         if self._runtime_available:
             try:
                 from hpl_runtime.debug import ErrorAnalyzer as RuntimeErrorAnalyzer
-                from hpl_runtime.debug import ErrorContext
                 
                 analyzer = RuntimeErrorAnalyzer()
                 context = analyzer.analyze_error(error, source_code=source_code)
@@ -495,8 +415,8 @@ class ErrorAnalyzer:
         
         return result
     
-    def _get_surrounding_lines(self, source_code: str, error_line: int, 
-                                  context_lines: int = 3) -> List[Dict[str, Any]]:
+    def _get_surrounding_lines(self, source_code: str, error_line: int,
+                              context_lines: int = 3) -> List[Dict[str, Any]]:
         """
         获取错误行周围的代码
         
@@ -522,7 +442,8 @@ class ErrorAnalyzer:
         
         return surrounding
     
-    def _generate_basic_suggestions(self, error: Exception, line_num: Optional[int]) -> List[str]:
+    def _generate_basic_suggestions(self, error: Exception, 
+                                   line_num: Optional[int]) -> List[str]:
         """生成基本修复建议"""
         suggestions = []
         error_msg = str(error).lower()
@@ -570,7 +491,7 @@ def get_error_analyzer() -> ErrorAnalyzer:
     return _error_analyzer
 
 
-def debug_file(file_path: str, 
+def debug_file(file_path: str,
                call_target: Optional[str] = None,
                call_args: Optional[List] = None) -> Dict[str, Any]:
     """
@@ -586,6 +507,25 @@ def debug_file(file_path: str,
     """
     service = get_debug_service()
     return service.debug_file(file_path, call_target, call_args)
+
+
+def debug_code(code: str, file_path: Optional[str] = None,
+               call_target: Optional[str] = None,
+               call_args: Optional[List] = None) -> Dict[str, Any]:
+    """
+    便捷函数：调试执行 HPL 代码
+    
+    Args:
+        code: HPL 源代码
+        file_path: 可选的文件路径
+        call_target: 可选的调用目标函数
+        call_args: 可选的调用参数
+    
+    Returns:
+        dict: 调试结果
+    """
+    service = get_debug_service()
+    return service.debug_code(code, file_path, call_target, call_args)
 
 
 def analyze_error(error: Exception, source_code: str) -> Dict[str, Any]:

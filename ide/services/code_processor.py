@@ -2,6 +2,7 @@
 代码预处理服务
 处理HPL代码清理和include文件管理
 提供调试处理、错误上下文分析和代码补全支持
+基于 HPLEngine 实现
 """
 
 import os
@@ -11,11 +12,21 @@ import logging
 import tempfile
 from typing import Dict, List, Any, Optional, Tuple
 
-from config import PROJECT_ROOT, ALLOWED_EXAMPLES_DIR
+# 导入核心引擎
+try:
+    from ide.services.hpl_engine import (
+        HPLEngine, 
+        get_completions as engine_get_completions,
+        get_code_outline as engine_get_code_outline,
+        clean_code as engine_clean_code
+    )
+    _engine_available = True
+except ImportError:
+    _engine_available = False
 
 # 导入调试服务
 try:
-    from ide.services.debug_service import get_debug_service, get_error_analyzer, HPLDebugService
+    from ide.services.debug_service import get_debug_service, get_error_analyzer
     _debug_service_available = True
 except ImportError:
     _debug_service_available = False
@@ -23,8 +34,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-
-def clean_code(code):
+def clean_code(code: str) -> str:
     """
     清理代码中的转义字符
     处理 PowerShell 等发送的转义换行符
@@ -36,6 +46,14 @@ def clean_code(code):
     Returns:
         清理后的代码字符串
     """
+    # 如果引擎可用，使用引擎的清理方法
+    if _engine_available:
+        try:
+            return engine_clean_code(code)
+        except:
+            pass
+    
+    # 备用清理实现
     result = []
     i = 0
     length = len(code)
@@ -90,7 +108,7 @@ def clean_code(code):
     return ''.join(result)
 
 
-def extract_includes(code):
+def extract_includes(code: str) -> List[str]:
     """
     从 HPL 代码中提取 includes 列表
     使用正则表达式解析，避免 YAML 解析错误（HPL 代码包含 => 箭头函数）
@@ -128,18 +146,24 @@ def extract_includes(code):
     return includes
 
 
-def copy_include_files(code, temp_dir, base_dir=None):
+def copy_include_files(code: str, temp_dir: str, 
+                       base_dir: Optional[str] = None,
+                       current_file: Optional[str] = None) -> Tuple[List[str], str, List[str]]:
     """
     复制 include 文件到临时目录
     从多个可能的目录查找 include 文件：
-    1. 当前工作目录（如果指定了 base_dir）
-    2. 项目根目录
-    3. examples 目录
+    1. 当前文件所在目录（最高优先级）- P1修复
+    2. 当前工作目录（如果指定了 base_dir）
+    3. 项目根目录
+    4. examples 目录
+    
+    P1修复：支持相对路径解析（./ 和 ../）相对于当前文件
     
     Args:
         code: HPL代码
         temp_dir: 临时目录路径
         base_dir: 基础搜索目录（可选）
+        current_file: 当前执行的HPL文件路径（可选，P1修复新增）
     
     Returns:
         tuple: (copied_files列表, 更新后的代码, 未找到的includes列表)
@@ -151,21 +175,50 @@ def copy_include_files(code, temp_dir, base_dir=None):
     copied_files = []
     not_found = []
     
+    # P1修复：确定当前文件所在目录
+    current_dir = None
+    if current_file:
+        current_dir = os.path.dirname(os.path.abspath(current_file))
+        logger.debug(f"P1修复：当前文件目录: {current_dir}")
+    
     # 定义搜索路径（按优先级）
     search_paths = []
     
-    # 1. 基础目录（如果有）
+    # P1修复：1. 当前文件所在目录（最高优先级）
+    if current_dir and os.path.exists(current_dir):
+        search_paths.append(current_dir)
+        logger.debug(f"P1修复：添加当前文件目录到搜索路径: {current_dir}")
+    
+    # 2. 基础目录（如果有）
     if base_dir and os.path.exists(base_dir):
         search_paths.append(os.path.abspath(base_dir))
     
-    # 2. 项目根目录
-    search_paths.append(PROJECT_ROOT)
+    # 3. 项目根目录
+    project_root = os.path.join(os.path.dirname(__file__), '..', '..')
+    search_paths.append(os.path.abspath(project_root))
     
-    # 3. examples 目录
-    if os.path.exists(ALLOWED_EXAMPLES_DIR):
-        search_paths.append(ALLOWED_EXAMPLES_DIR)
+    # 4. examples 目录
+    examples_dir = os.path.join(project_root, 'examples')
+    if os.path.exists(examples_dir):
+        search_paths.append(examples_dir)
     
     for include_file in includes:
+        # P1修复：处理相对路径（./ 和 ../）
+        resolved_path = None
+        
+        if include_file.startswith('./') or include_file.startswith('../'):
+            # 相对路径，相对于当前文件解析
+            if current_dir:
+                try:
+                    resolved_path = os.path.normpath(os.path.join(current_dir, include_file))
+                    if os.path.exists(resolved_path) and os.path.isfile(resolved_path):
+                        logger.debug(f"P1修复：解析相对路径成功: {include_file} -> {resolved_path}")
+                    else:
+                        resolved_path = None
+                except Exception as e:
+                    logger.warning(f"P1修复：解析相对路径失败: {include_file}, 错误: {e}")
+                    resolved_path = None
+        
         # 清理文件路径（防止目录遍历）
         clean_include = os.path.normpath(include_file).lstrip('/\\')
         if '..' in clean_include:
@@ -174,29 +227,60 @@ def copy_include_files(code, temp_dir, base_dir=None):
             continue
         
         found = False
-        for search_dir in search_paths:
-            source_path = os.path.join(search_dir, clean_include)
-            if os.path.exists(source_path) and os.path.isfile(source_path):
-                # 复制到临时目录
+        
+        # P1修复：如果已经解析到相对路径，直接使用
+        if resolved_path and os.path.exists(resolved_path):
+            source_path = resolved_path
+            # 计算在临时目录中的目标路径
+            if include_file.startswith('./') or include_file.startswith('../'):
+                # 保持相对结构
                 dest_path = os.path.join(temp_dir, clean_include)
-                
-                # 确保目标目录存在
-                dest_dir = os.path.dirname(dest_path)
-                if dest_dir and not os.path.exists(dest_dir):
-                    try:
-                        os.makedirs(dest_dir, exist_ok=True)
-                    except Exception as e:
-                        logger.error(f"创建目录失败: {dest_dir}, 错误: {e}")
-                        continue
-                
+            else:
+                dest_path = os.path.join(temp_dir, os.path.basename(clean_include))
+            
+            # 确保目标目录存在
+            dest_dir = os.path.dirname(dest_path)
+            if dest_dir and not os.path.exists(dest_dir):
                 try:
-                    shutil.copy2(source_path, dest_path)
-                    copied_files.append(dest_path)
-                    logger.info(f"复制 include 文件: {source_path} -> {dest_path}")
-                    found = True
-                    break
+                    os.makedirs(dest_dir, exist_ok=True)
                 except Exception as e:
-                    logger.error(f"复制 include 文件失败: {source_path}, 错误: {e}")
+                    logger.error(f"创建目录失败: {dest_dir}, 错误: {e}")
+                    not_found.append(include_file)
+                    continue
+            
+            try:
+                shutil.copy2(source_path, dest_path)
+                copied_files.append(dest_path)
+                logger.info(f"P1修复：复制 include 文件: {source_path} -> {dest_path}")
+                found = True
+            except Exception as e:
+                logger.error(f"复制 include 文件失败: {source_path}, 错误: {e}")
+        
+        # 如果在相对路径中没找到，或者不是相对路径，则在搜索路径中查找
+        if not found:
+            for search_dir in search_paths:
+                source_path = os.path.join(search_dir, clean_include)
+                if os.path.exists(source_path) and os.path.isfile(source_path):
+                    # 复制到临时目录
+                    dest_path = os.path.join(temp_dir, clean_include)
+                    
+                    # 确保目标目录存在
+                    dest_dir = os.path.dirname(dest_path)
+                    if dest_dir and not os.path.exists(dest_dir):
+                        try:
+                            os.makedirs(dest_dir, exist_ok=True)
+                        except Exception as e:
+                            logger.error(f"创建目录失败: {dest_dir}, 错误: {e}")
+                            continue
+                    
+                    try:
+                        shutil.copy2(source_path, dest_path)
+                        copied_files.append(dest_path)
+                        logger.info(f"复制 include 文件: {source_path} -> {dest_path}")
+                        found = True
+                        break
+                    except Exception as e:
+                        logger.error(f"复制 include 文件失败: {source_path}, 错误: {e}")
         
         if not found:
             not_found.append(include_file)
@@ -212,19 +296,21 @@ def process_for_debug(code: str, file_path: Optional[str] = None,
     处理代码用于调试执行
     清理代码、复制 include 文件，并准备调试环境
     
+    P1修复：传递 file_path 到 copy_include_files 以支持相对路径解析
+    
     Args:
         code: HPL 源代码
-        file_path: 可选的文件路径（用于确定基础目录）
+        file_path: 可选的文件路径（用于确定基础目录和相对路径解析）
         call_target: 可选的调用目标函数
         call_args: 可选的调用参数
     
     Returns:
         dict: 处理结果，包含临时文件路径和调试信息
     """
-    if not _debug_service_available:
+    if not _engine_available:
         return {
             'success': False,
-            'error': '调试服务不可用',
+            'error': 'HPLEngine 不可用',
             'temp_file': None
         }
     
@@ -238,9 +324,9 @@ def process_for_debug(code: str, file_path: Optional[str] = None,
         # 3. 确定基础目录
         base_dir = os.path.dirname(file_path) if file_path else None
         
-        # 4. 复制 include 文件
+        # 4. 复制 include 文件 - P1修复：传递 file_path 支持相对路径
         copied_files, _, not_found = copy_include_files(
-            cleaned_code, temp_dir, base_dir
+            cleaned_code, temp_dir, base_dir, current_file=file_path
         )
         
         # 5. 创建临时 HPL 文件
@@ -254,13 +340,10 @@ def process_for_debug(code: str, file_path: Optional[str] = None,
         with open(temp_file_path, 'w', encoding='utf-8') as f:
             f.write(cleaned_code)
         
-        # 6. 使用调试服务执行
-        debug_service = get_debug_service()
-        debug_result = debug_service.debug_file(
-            temp_file_path, 
-            call_target=call_target,
-            call_args=call_args
-        )
+        # 6. 使用 HPLEngine 执行调试
+        engine = HPLEngine()
+        engine.load_file(temp_file_path)
+        debug_result = engine.debug(call_target=call_target, call_args=call_args)
         
         return {
             'success': debug_result.get('success', False),
@@ -281,7 +364,7 @@ def process_for_debug(code: str, file_path: Optional[str] = None,
         }
 
 
-def get_error_context(code: str, error: Exception, 
+def get_error_context(code: str, error: Exception,
                       file_path: Optional[str] = None) -> Dict[str, Any]:
     """
     获取错误上下文和修复建议
@@ -341,11 +424,11 @@ def get_error_context(code: str, error: Exception,
         }
 
 
-def get_completion_items(code: str, line: int, column: int, 
+def get_completion_items(code: str, line: int, column: int,
                          prefix: str = "") -> List[Dict[str, Any]]:
     """
     获取代码补全项
-    基于 HPL 代码解析提供类、对象、函数的补全建议
+    基于 HPLEngine 提供类、对象、函数的补全建议
     
     Args:
         code: HPL 源代码
@@ -356,96 +439,21 @@ def get_completion_items(code: str, line: int, column: int,
     Returns:
         list: 补全项列表
     """
-    items = []
+    if not _engine_available:
+        # 返回基础关键字补全
+        return _get_basic_completions(prefix)
     
-    # 尝试使用 hpl_runtime 解析代码
     try:
-        import sys
-        import tempfile
-        
-        # 添加 examples 目录到路径
-        if ALLOWED_EXAMPLES_DIR not in sys.path:
-            sys.path.insert(0, ALLOWED_EXAMPLES_DIR)
-        
-        from hpl_runtime import HPLParser
-        
-        # 创建临时文件
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.hpl', 
-                                         delete=False, encoding='utf-8') as f:
-            f.write(code)
-            temp_file = f.name
-        
-        try:
-            # 解析代码
-            parser = HPLParser(temp_file)
-            classes, objects, functions, _, _, _, _ = parser.parse()
-            
-            # 类名补全
-            for class_name, hpl_class in classes.items():
-                if class_name.startswith(prefix):
-                    methods = []
-                    if hasattr(hpl_class, 'methods'):
-                        methods = list(hpl_class.methods.keys())
-                    
-                    items.append({
-                        'label': class_name,
-                        'kind': 'Class',
-                        'detail': f"Class: {class_name}",
-                        'documentation': f"类 {class_name}" + 
-                                        (f", 方法: {', '.join(methods)}" if methods else ""),
-                        'insertText': class_name
-                    })
-            
-            # 对象补全
-            for obj_name, obj in objects.items():
-                if obj_name.startswith(prefix):
-                    class_name = "Unknown"
-                    if hasattr(obj, 'hpl_class') and hasattr(obj.hpl_class, 'name'):
-                        class_name = obj.hpl_class.name
-                    
-                    items.append({
-                        'label': obj_name,
-                        'kind': 'Object',
-                        'detail': f"Object: {obj_name} ({class_name})",
-                        'documentation': f"对象 {obj_name}，类型: {class_name}",
-                        'insertText': obj_name
-                    })
-            
-            # 函数补全
-            for func_name, func in functions.items():
-                if func_name.startswith(prefix):
-                    params = []
-                    if hasattr(func, 'params'):
-                        params = func.params
-                    
-                    # 生成带占位符的插入文本
-                    param_snippets = []
-                    for i, param in enumerate(params):
-                        param_snippets.append(f"${{{i+1}:{param}}}")
-                    
-                    insert_text = f"{func_name}({', '.join(param_snippets)})"
-                    
-                    items.append({
-                        'label': func_name,
-                        'kind': 'Function',
-                        'detail': f"Function: {func_name}({', '.join(params)})",
-                        'documentation': f"函数 {func_name}" + 
-                                        (f"\n参数: {', '.join(params)}" if params else ""),
-                        'insertText': insert_text,
-                        'params': params
-                    })
-            
-        finally:
-            # 清理临时文件
-            try:
-                os.unlink(temp_file)
-            except:
-                pass
-                
-    except ImportError:
-        logger.debug("hpl_runtime 不可用，使用基础补全")
+        # 使用 HPLEngine 获取补全项
+        return engine_get_completions(code, line, column, prefix)
     except Exception as e:
-        logger.error(f"解析代码获取补全项失败: {e}")
+        logger.error(f"获取补全项失败: {e}")
+        return _get_basic_completions(prefix)
+
+
+def _get_basic_completions(prefix: str = "") -> List[Dict[str, Any]]:
+    """获取基础补全项（当引擎不可用时）"""
+    items = []
     
     # 添加 HPL 关键字补全
     keywords = {
@@ -512,98 +520,26 @@ def get_code_outline(code: str) -> Dict[str, List[Dict[str, Any]]]:
     Returns:
         dict: 代码结构大纲
     """
-    outline = {
-        'classes': [],
-        'functions': [],
-        'objects': [],
-        'imports': []
-    }
+    if not _engine_available:
+        return {
+            'classes': [],
+            'functions': [],
+            'objects': [],
+            'imports': []
+        }
     
     try:
-        import sys
-        import tempfile
-        
-        # 添加 examples 目录到路径
-        if ALLOWED_EXAMPLES_DIR not in sys.path:
-            sys.path.insert(0, ALLOWED_EXAMPLES_DIR)
-        
-        from hpl_runtime import HPLParser
-        
-        # 创建临时文件
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.hpl', 
-                                         delete=False, encoding='utf-8') as f:
-            f.write(code)
-            temp_file = f.name
-        
-        try:
-            parser = HPLParser(temp_file)
-            classes, objects, functions, main_func, _, _, imports = parser.parse()
-            
-            # 提取类信息
-            for class_name, hpl_class in classes.items():
-                methods = []
-                if hasattr(hpl_class, 'methods'):
-                    for method_name, method in hpl_class.methods.items():
-                        params = getattr(method, 'params', [])
-                        methods.append({
-                            'name': method_name,
-                            'params': params
-                        })
-                
-                parent = None
-                if hasattr(hpl_class, 'parent') and hpl_class.parent:
-                    parent = hpl_class.parent.name if hasattr(hpl_class.parent, 'name') else str(hpl_class.parent)
-                
-                outline['classes'].append({
-                    'name': class_name,
-                    'parent': parent,
-                    'methods': methods
-                })
-            
-            # 提取函数信息
-            for func_name, func in functions.items():
-                params = getattr(func, 'params', [])
-                outline['functions'].append({
-                    'name': func_name,
-                    'params': params
-                })
-            
-            # 提取 main 函数
-            if main_func:
-                params = getattr(main_func, 'params', [])
-                outline['functions'].insert(0, {
-                    'name': 'main',
-                    'params': params,
-                    'is_main': True
-                })
-            
-            # 提取对象信息
-            for obj_name, obj in objects.items():
-                class_name = "Unknown"
-                if hasattr(obj, 'hpl_class') and hasattr(obj.hpl_class, 'name'):
-                    class_name = obj.hpl_class.name
-                
-                outline['objects'].append({
-                    'name': obj_name,
-                    'class': class_name
-                })
-            
-            # 提取导入信息
-            for imp in imports:
-                module = imp.get('module', '')
-                alias = imp.get('alias', module)
-                outline['imports'].append({
-                    'module': module,
-                    'alias': alias
-                })
-                
-        finally:
-            try:
-                os.unlink(temp_file)
-            except:
-                pass
-                
+        # 使用 HPLEngine 获取代码大纲
+        return engine_get_code_outline(code)
     except Exception as e:
         logger.error(f"获取代码大纲失败: {e}")
-    
-    return outline
+        return {
+            'classes': [],
+            'functions': [],
+            'objects': [],
+            'imports': []
+        }
+
+
+# 便捷函数别名
+get_completions = get_completion_items
