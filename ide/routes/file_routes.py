@@ -9,7 +9,8 @@ import logging
 from flask import request, jsonify
 
 from ide.services.code_service import validate_path, is_safe_filename
-from config import ALLOWED_WORKSPACE_DIR
+from config import ALLOWED_WORKSPACE_DIR, ALLOWED_EXAMPLES_DIR
+
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +19,10 @@ def get_base_path(mode):
     """
     根据模式获取基础路径
     """
-    if mode == 'workspace':
-        return ALLOWED_WORKSPACE_DIR
+    if mode == 'examples':
+        return ALLOWED_EXAMPLES_DIR
     return ALLOWED_WORKSPACE_DIR  # 默认使用workspace
+
 
 
 def register_file_routes(app):

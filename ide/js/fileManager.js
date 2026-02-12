@@ -106,7 +106,7 @@ call: main()
         const workspaceName = document.querySelector('.breadcrumb-workspace-name');
         if (workspaceName) {
             const isWorkspace = mode === 'workspace';
-            workspaceName.innerHTML = isWorkspace ? '💼 工作区' : '📚 示例脚本';
+            workspaceName.innerHTML = isWorkspace ? '💼 工作区' : '📚 示例脚本（只读）';
         }
         
         // 更新展开的文件夹
@@ -115,8 +115,14 @@ call: main()
         // 刷新文件树
         HPLApp.refreshFileTree();
         
-        HPLUI.showOutput(`已切换到${mode === 'workspace' ? '工作区' : '示例脚本'}`, 'info');
+        // 显示模式切换提示
+        if (mode === 'examples') {
+            HPLUI.showOutput('已切换到示例脚本（只读模式）- 文件修改操作已禁用', 'info');
+        } else {
+            HPLUI.showOutput('已切换到工作区', 'info');
+        }
     },
+
 
 
 
@@ -381,6 +387,12 @@ call: main()
      * 处理上传操作
      */
     handleUpload(targetPath) {
+        // 示例模式下禁止上传
+        if (this.currentMode === 'examples') {
+            HPLUI.showOutput('示例脚本为只读模式，无法上传文件', 'warning');
+            return;
+        }
+        
         const uploadInput = document.getElementById('file-upload-input');
         if (uploadInput) {
             // 处理根目录情况（targetPath为根目录名时）
@@ -435,6 +447,7 @@ call: main()
     showContextMenu(x, y, item, defaultPath = null) {
         const isFolder = item ? item.classList.contains('folder') : true; // 空白区域视为文件夹上下文
         const isEmptySpace = item === null;
+        const isExamplesMode = this.currentMode === 'examples';
         
         // 根据类型显示/隐藏菜单项
         const newFileItem = this.contextMenu.querySelector('[data-action="new-file"]');
@@ -445,21 +458,36 @@ call: main()
         const deleteItem = this.contextMenu.querySelector('[data-action="delete"]');
         const uploadItem = this.contextMenu.querySelector('[data-action="upload"]');
         
-        // 新建文件/文件夹：文件夹或空白区域显示
-        if (newFileItem) newFileItem.style.display = isFolder ? 'block' : 'none';
-        if (newFolderItem) newFolderItem.style.display = isFolder ? 'block' : 'none';
-        
-        // 备份功能：只对文件显示
-        if (backupItem) backupItem.style.display = (!isFolder && !isEmptySpace) ? 'block' : 'none';
-        if (viewBackupsItem) viewBackupsItem.style.display = (!isFolder && !isEmptySpace) ? 'block' : 'none';
-        
-        // 重命名和删除：只在具体项目上显示，空白区域隐藏
-        if (renameItem) renameItem.style.display = isEmptySpace ? 'none' : 'block';
-        if (deleteItem) deleteItem.style.display = isEmptySpace ? 'none' : 'block';
-        
-        // 上传：文件夹或空白区域显示
-        if (uploadItem) uploadItem.style.display = isFolder ? 'block' : 'none';
-
+        // 示例模式下禁用所有修改操作
+        if (isExamplesMode) {
+            // 新建文件/文件夹：禁用
+            if (newFileItem) newFileItem.style.display = 'none';
+            if (newFolderItem) newFolderItem.style.display = 'none';
+            // 备份功能：禁用
+            if (backupItem) backupItem.style.display = 'none';
+            if (viewBackupsItem) viewBackupsItem.style.display = 'none';
+            // 重命名和删除：禁用
+            if (renameItem) renameItem.style.display = 'none';
+            if (deleteItem) deleteItem.style.display = 'none';
+            // 上传：禁用
+            if (uploadItem) uploadItem.style.display = 'none';
+        } else {
+            // 工作区模式：正常显示
+            // 新建文件/文件夹：文件夹或空白区域显示
+            if (newFileItem) newFileItem.style.display = isFolder ? 'block' : 'none';
+            if (newFolderItem) newFolderItem.style.display = isFolder ? 'block' : 'none';
+            
+            // 备份功能：只对文件显示
+            if (backupItem) backupItem.style.display = (!isFolder && !isEmptySpace) ? 'block' : 'none';
+            if (viewBackupsItem) viewBackupsItem.style.display = (!isFolder && !isEmptySpace) ? 'block' : 'none';
+            
+            // 重命名和删除：只在具体项目上显示，空白区域隐藏
+            if (renameItem) renameItem.style.display = isEmptySpace ? 'none' : 'block';
+            if (deleteItem) deleteItem.style.display = isEmptySpace ? 'none' : 'block';
+            
+            // 上传：文件夹或空白区域显示
+            if (uploadItem) uploadItem.style.display = isFolder ? 'block' : 'none';
+        }
         
         // 存储默认路径（用于空白区域）
         this.contextMenu.dataset.defaultPath = defaultPath !== null ? defaultPath : (item ? item.dataset.path : this.currentMode);
@@ -646,6 +674,12 @@ call: main()
      * 创建新文件
      */
     async createNewFile(folderPath) {
+        // 示例模式下禁止创建文件
+        if (this.currentMode === 'examples') {
+            HPLUI.showOutput('示例脚本为只读模式，无法创建新文件', 'warning');
+            return;
+        }
+        
         let filename = prompt('请输入文件名（包含扩展名）：', 'new_file.hpl');
         if (!filename) return;
         
@@ -664,6 +698,7 @@ call: main()
             HPLUI.showOutput('错误：请创建 .hpl 文件', 'error');
             return;
         }
+
         
         // 使用新的路径处理工具函数构建API路径
         const relativePath = HPLUtils.buildApiPath(folderPath, filename, this.currentMode);
@@ -758,6 +793,12 @@ call: main()
      * 创建新文件夹
      */
     async createNewFolder(parentPath) {
+        // 示例模式下禁止创建文件夹
+        if (this.currentMode === 'examples') {
+            HPLUI.showOutput('示例脚本为只读模式，无法创建新文件夹', 'warning');
+            return;
+        }
+        
         const folderName = prompt('请输入文件夹名称：', 'new_folder');
         if (!folderName) return;
         
@@ -765,6 +806,7 @@ call: main()
             HPLUI.showOutput('错误：文件夹名称无效', 'error');
             return;
         }
+
         
         // 处理根目录情况（parentPath为根目录名时）
         const fullPath = parentPath === this.currentMode ? `${parentPath}/${folderName}` :
@@ -787,6 +829,12 @@ call: main()
      * 重命名文件或文件夹
      */
     async renameItem(path, isFolder) {
+        // 示例模式下禁止重命名
+        if (this.currentMode === 'examples') {
+            HPLUI.showOutput('示例脚本为只读模式，无法重命名', 'warning');
+            return;
+        }
+        
         const oldName = path.split('/').pop();
         const newName = prompt(`请输入新名称：`, oldName);
         if (!newName || newName === oldName) return;
@@ -795,6 +843,7 @@ call: main()
             HPLUI.showOutput('错误：名称无效', 'error');
             return;
         }
+
         
         const parentPath = path.substring(0, path.lastIndexOf('/'));
         const newPath = parentPath ? `${parentPath}/${newName}` : newName;
@@ -813,12 +862,19 @@ call: main()
      * 删除文件或文件夹
      */
     async deleteItem(path, isFolder) {
+        // 示例模式下禁止删除
+        if (this.currentMode === 'examples') {
+            HPLUI.showOutput('示例脚本为只读模式，无法删除文件', 'warning');
+            return;
+        }
+        
         const itemType = isFolder ? '文件夹' : '文件';
         const itemName = path.split('/').pop();
         
         if (!confirm(`确定要删除${itemType} "${itemName}" 吗？${isFolder ? '文件夹中的所有内容都将被删除！' : ''}`)) {
             return;
         }
+
         
         try {
             await HPLAPI.deleteItem(path, this.currentMode);
@@ -1064,6 +1120,12 @@ call: main()
      * 保存当前文件
      */
     async saveCurrentFile() {
+        // 示例模式下禁止保存
+        if (this.currentMode === 'examples') {
+            HPLUI.showOutput('示例脚本为只读模式，无法保存修改。请切换到工作区后另存为。', 'warning');
+            return;
+        }
+        
         if (!this.currentFile) {
             HPLUI.showSaveDialog(this.DEFAULT_FILENAME);
             return;
@@ -1082,7 +1144,6 @@ call: main()
             HPLUI.showOutput('保存文件失败: ' + error.message, 'error');
         }
     },
-
 
     /**
      * 确认保存（从对话框）
