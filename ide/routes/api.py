@@ -19,10 +19,14 @@ from config import (
 
 
 from utils.helpers import execute_with_timeout, TimeoutException
-from services.security import limit_request_size, validate_path, is_safe_filename
-from services.code_processor import clean_code, copy_include_files
-from services.code_executor import execute_hpl, check_runtime_available
-from services.syntax_validator import validate_code
+from ide.services.security import limit_request_size, validate_path, is_safe_filename
+
+from ide.services.code_processor import clean_code, copy_include_files
+
+from ide.services.code_executor import execute_hpl, check_runtime_available
+
+from ide.services.syntax_validator import validate_code
+
 
 
 
