@@ -129,6 +129,7 @@ def register_api_routes(app: Flask):
         """
         P1修复：流式执行 HPL 代码
         使用 Server-Sent Events (SSE) 实时返回输出
+        P2修复：添加include文件复制支持
         """
         # 检查 hpl_runtime 是否可用
         if not check_runtime_available():
@@ -157,35 +158,68 @@ def register_api_routes(app: Flask):
         # 清理代码
         code = clean_code(code)
         
-        def generate_stream():
-            """生成SSE流"""
-            try:
-                # 使用流式执行
-                for chunk in execute_code_streaming(code, input_data=input_data):
-                    # 将每个输出块转换为SSE格式
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                
-                # 发送结束标记
-                yield f"data: {json.dumps({'type': 'done', 'data': None})}\n\n"
-                
-            except Exception as e:
-                logger.error(f"流式执行错误: {e}")
-                error_chunk = {
-                    'type': 'error',
-                    'data': str(e),
-                    'error_type': type(e).__name__
-                }
-                yield f"data: {json.dumps(error_chunk)}\n\n"
+        # P2修复：创建临时目录并复制include文件
+        temp_dir = tempfile.mkdtemp(prefix='hpl_stream_')
+        temp_file = os.path.join(temp_dir, 'main.hpl')
         
-        # 返回SSE响应
-        return Response(
-            stream_with_context(generate_stream()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no'  # 禁用Nginx缓冲
-            }
-        )
+        try:
+            # 复制 include 文件到临时目录
+            copied_files, _, not_found = copy_include_files(code, temp_dir)
+            if not_found:
+                logger.warning(f"流式执行未找到的 include 文件: {', '.join(not_found)}")
+            
+            # 写入代码到临时文件
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                f.write(code)
+            
+            def generate_stream():
+                """生成SSE流"""
+                try:
+                    # P2修复：使用临时文件路径执行，确保include文件可被找到
+                    for chunk in execute_code_streaming(code, input_data=input_data, file_path=temp_file):
+                        # 将每个输出块转换为SSE格式
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                    
+                    # 发送结束标记
+                    yield f"data: {json.dumps({'type': 'done', 'data': None})}\n\n"
+                    
+                except Exception as e:
+                    logger.error(f"流式执行错误: {e}")
+                    error_chunk = {
+                        'type': 'error',
+                        'data': str(e),
+                        'error_type': type(e).__name__
+                    }
+                    yield f"data: {json.dumps(error_chunk)}\n\n"
+                finally:
+                    # 清理临时文件
+                    try:
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                    except:
+                        pass
+            
+            # 返回SSE响应
+            return Response(
+                stream_with_context(generate_stream()),
+                mimetype='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-cache',
+                    'X-Accel-Buffering': 'no'  # 禁用Nginx缓冲
+                }
+            )
+            
+        except Exception as e:
+            # 清理临时文件
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+            logger.error(f"流式执行准备错误: {e}")
+            return jsonify({
+                'success': False,
+                'error': f'服务器错误: {str(e)}'
+            })
+
 
     @app.route('/api/examples', methods=['GET'])
     def list_examples():
