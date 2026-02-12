@@ -151,28 +151,33 @@ class HPLSyntaxValidator:
             ))
             return
         
-        # 检查是否包含Tab字符（YAML不允许）
-        # 但首先检查是否是混合缩进（Tab和空格都用）
+        # 检查缩进一致性（混合Tab和空格）
+        has_tab_indent = False
+        has_space_indent = False
+        
         for i, line in enumerate(lines, 1):
             if not line.strip() or line.strip().startswith('#'):
                 continue
             
             leading_whitespace = line[:len(line) - len(line.lstrip())]
-            has_tab = '\t' in leading_whitespace
-            has_space = ' ' in leading_whitespace
-            
-            # 如果是混合缩进，添加警告而不是错误
-            if has_tab and has_space:
-                self.warnings.append(SyntaxErrorInfo(
-                    line=i,
-                    column=1,
-                    message="混合使用Tab和空格缩进，建议统一使用空格",
-                    severity="warning",
-                    code=line
-                ))
-                # 继续检查其他行，不返回
+            if '\t' in leading_whitespace:
+                has_tab_indent = True
+            if ' ' in leading_whitespace:
+                has_space_indent = True
         
-        # 检查纯Tab缩进（错误）
+        # 如果同时使用了Tab和空格缩进，添加警告（但不作为错误）
+        if has_tab_indent and has_space_indent:
+            self.warnings.append(SyntaxErrorInfo(
+                line=1,
+                column=1,
+                message="混合使用Tab和空格缩进，建议统一使用空格",
+                severity="warning",
+                code=None
+            ))
+            # 混合缩进时，不将纯Tab视为错误，只警告即可
+            return
+        
+        # 检查纯Tab缩进（错误）- 仅在未混合使用时
         for i, line in enumerate(lines, 1):
             if '\t' in line and line.strip() and not line.strip().startswith('#'):
                 leading_whitespace = line[:len(line) - len(line.lstrip())]
@@ -188,6 +193,8 @@ class HPLSyntaxValidator:
                         code=line
                     ))
                     return
+
+
 
 
         
@@ -869,7 +876,8 @@ class HPLSyntaxValidator:
                 sys.path.insert(0, examples_dir)
             
             # 从hpl_runtime导入
-            from hpl_runtime import HPLParser, HPLSyntaxError, HPLRuntimeError
+            from hpl_runtime import HPLParser, HPLSyntaxError, HPLRuntimeError, HPLImportError
+
             
             # 创建临时文件（使用UTF-8编码）
             with tempfile.NamedTemporaryFile(mode='w', suffix='.hpl', delete=False, encoding='utf-8') as f:
@@ -882,33 +890,35 @@ class HPLSyntaxValidator:
                 parser = HPLParser(temp_file)
                 parser.parse()
                 
+            except HPLImportError as e:
+                # 捕获HPL导入错误（如包含文件不存在）- 作为警告而不是错误
+                # 在验证阶段不需要实际文件存在
+                error_msg = str(e)
+                self.warnings.append(SyntaxErrorInfo(
+                    line=getattr(e, 'line', 1),
+                    column=getattr(e, 'column', 1),
+                    message=f"警告: {error_msg}",
+                    severity="warning",
+                    code=self._get_code_at_line(code, getattr(e, 'line', None))
+                ))
+
+                
             except HPLSyntaxError as e:
                 # 捕获HPL语法错误 - 使用详细的错误信息
-                # 忽略包含文件不存在的错误（在验证阶段不需要实际文件存在）
-                error_msg = e.message or str(e)
-                if "not found" in error_msg.lower() and ("include" in error_msg.lower() or "import" in error_msg.lower()):
-                    # 包含文件不存在，作为警告而不是错误
-                    self.warnings.append(SyntaxErrorInfo(
-                        line=e.line or 1,
-                        column=e.column or 1,
-                        message=f"警告: {error_msg}",
-                        severity="warning",
-                        code=self._get_code_at_line(code, e.line) if e.line else None
-                    ))
-                else:
-                    error_info = SyntaxErrorInfo(
-                        line=e.line or 1,
-                        column=e.column or 1,
-                        message=error_msg,
-                        severity="error",
-                        code=self._get_code_at_line(code, e.line) if e.line else None
-                    )
-                    
-                    # 添加错误键（如果有）
-                    if hasattr(e, 'error_key') and e.error_key:
-                        error_info.message = f"[{e.error_key}] {error_info.message}"
-                    
-                    self.errors.append(error_info)
+                error_info = SyntaxErrorInfo(
+                    line=e.line or 1,
+                    column=e.column or 1,
+                    message=e.message or str(e),
+                    severity="error",
+                    code=self._get_code_at_line(code, e.line) if e.line else None
+                )
+                
+                # 添加错误键（如果有）
+                if hasattr(e, 'error_key') and e.error_key:
+                    error_info.message = f"[{e.error_key}] {error_info.message}"
+                
+                self.errors.append(error_info)
+
 
                 
                 # 如果有错误分析器，获取修复建议
@@ -957,9 +967,11 @@ class HPLSyntaxValidator:
                 if ("tab" in error_msg.lower() or 
                     "cannot start any token" in error_msg.lower() or
                     "block mapping" in error_msg.lower() or
-                    "expected <block end>" in error_msg.lower()):
+                    "expected <block end>" in error_msg.lower() or
+                    "mapping values are not allowed here" in error_msg.lower()):
                     pass  # 已经处理过了或缩进问题已在前面检查
                 else:
+
                     # 尝试从错误消息中提取行号
                     line_match = re.search(r'line\s+(\d+)', error_msg, re.IGNORECASE)
                     line_num = int(line_match.group(1)) if line_match else 1
