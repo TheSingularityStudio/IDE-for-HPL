@@ -17,8 +17,8 @@ import threading
 from typing import Dict, List, Any, Optional, Tuple, Generator
 from dataclasses import dataclass
 
-# 导入统一的运行时管理器（P0修复）
-from ide.services.runtime_manager import check_runtime_available, get_runtime_manager
+# 导入运行时检查
+from ide.services.runtime_manager import check_runtime_available
 
 # P2修复：导入include文件处理
 from ide.services.code_processor import copy_include_files
