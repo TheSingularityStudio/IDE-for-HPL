@@ -35,7 +35,8 @@ logger = logging.getLogger(__name__)
 
 def execute_hpl(file_path, debug_mode: bool = False,
                 call_target: Optional[str] = None,
-                call_args: Optional[List] = None) -> Dict[str, Any]:
+                call_args: Optional[List] = None,
+                input_data: Optional[Any] = None) -> Dict[str, Any]:
     """
     执行 HPL 文件
     使用 HPLEngine 执行代码
@@ -45,6 +46,7 @@ def execute_hpl(file_path, debug_mode: bool = False,
         debug_mode: 是否启用调试模式
         call_target: 可选的调用目标函数（调试模式）
         call_args: 可选的调用参数（调试模式）
+        input_data: 可选的输入数据（用于input()函数）
     
     Returns:
         dict: 执行结果，包含success、output、error等字段
@@ -75,10 +77,10 @@ def execute_hpl(file_path, debug_mode: bool = False,
         
         if debug_mode:
             # 调试模式
-            result = engine.debug(call_target=call_target, call_args=call_args)
+            result = engine.debug(call_target=call_target, call_args=call_args, input_data=input_data)
         else:
             # 标准执行模式
-            result = engine.execute(call_target=call_target, call_args=call_args)
+            result = engine.execute(call_target=call_target, call_args=call_args, input_data=input_data)
         
         return result
         
@@ -92,18 +94,24 @@ def execute_hpl(file_path, debug_mode: bool = False,
         }
         
     except Exception as e:
+        # P1修复：保留详细的错误信息
+        error_result = _extract_error_details(e)
         error_msg = f"执行错误: {str(e)}"
         logger.error(error_msg, exc_info=True)
-        return {
+        
+        # 合并详细错误信息
+        error_result.update({
             'success': False,
             'error': error_msg
-        }
+        })
+        return error_result
 
 
 def execute_hpl_code(code: str, debug_mode: bool = False,
                     call_target: Optional[str] = None,
                     call_args: Optional[List] = None,
-                    file_path: Optional[str] = None) -> Dict[str, Any]:
+                    file_path: Optional[str] = None,
+                    input_data: Optional[Any] = None) -> Dict[str, Any]:
     """
     执行 HPL 代码字符串
     
@@ -113,6 +121,7 @@ def execute_hpl_code(code: str, debug_mode: bool = False,
         call_target: 可选的调用目标函数
         call_args: 可选的调用参数
         file_path: 可选的文件路径（用于错误显示）
+        input_data: 可选的输入数据（用于input()函数）
     
     Returns:
         dict: 执行结果
@@ -132,25 +141,74 @@ def execute_hpl_code(code: str, debug_mode: bool = False,
         
         if debug_mode:
             # 调试模式
-            result = engine.debug(call_target=call_target, call_args=call_args)
+            result = engine.debug(call_target=call_target, call_args=call_args, input_data=input_data)
         else:
             # 标准执行模式
-            result = engine.execute(call_target=call_target, call_args=call_args)
+            result = engine.execute(call_target=call_target, call_args=call_args, input_data=input_data)
         
         return result
         
     except Exception as e:
+        # P1修复：保留详细的错误信息
+        error_result = _extract_error_details(e)
         error_msg = f"执行错误: {str(e)}"
         logger.error(error_msg, exc_info=True)
-        return {
+        
+        # 合并详细错误信息
+        error_result.update({
             'success': False,
             'error': error_msg
-        }
+        })
+        return error_result
+
+
+def _extract_error_details(e: Exception) -> Dict[str, Any]:
+    """
+    P1修复：从异常中提取详细的错误信息
+    
+    Args:
+        e: 异常对象
+        
+    Returns:
+        dict: 包含详细错误信息的字典
+    """
+    details = {
+        'error_type': type(e).__name__,
+    }
+    
+    # 提取行号信息
+    if hasattr(e, 'line'):
+        details['line'] = e.line
+    elif hasattr(e, 'lineno'):
+        details['line'] = e.lineno
+    
+    # 提取列号信息
+    if hasattr(e, 'column'):
+        details['column'] = e.column
+    elif hasattr(e, 'col'):
+        details['column'] = e.col
+    
+    # 提取调用栈
+    if hasattr(e, 'call_stack'):
+        details['call_stack'] = e.call_stack
+    
+    # 提取错误键
+    if hasattr(e, 'error_key'):
+        details['error_key'] = e.error_key
+    
+    # 提取其他属性
+    if hasattr(e, '__dict__'):
+        for key, value in e.__dict__.items():
+            if key not in details and not key.startswith('_'):
+                details[key] = value
+    
+    return details
 
 
 def execute_with_debug(file_path: str,
                        call_target: Optional[str] = None,
-                       call_args: Optional[List] = None) -> Dict[str, Any]:
+                       call_args: Optional[List] = None,
+                       input_data: Optional[Any] = None) -> Dict[str, Any]:
     """
     使用调试模式执行 HPL 文件
     提供详细的执行跟踪、变量监控和性能分析
@@ -159,12 +217,13 @@ def execute_with_debug(file_path: str,
         file_path: HPL文件路径
         call_target: 可选的调用目标函数
         call_args: 可选的调用参数
+        input_data: 可选的输入数据（用于input()函数）
     
     Returns:
         dict: 包含执行结果和调试信息
     """
     return execute_hpl(file_path, debug_mode=True, 
-                      call_target=call_target, call_args=call_args)
+                      call_target=call_target, call_args=call_args, input_data=input_data)
 
 
 def get_execution_trace(file_path: str) -> List[Dict[str, Any]]:

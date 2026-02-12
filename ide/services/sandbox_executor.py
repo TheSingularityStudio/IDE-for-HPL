@@ -105,7 +105,8 @@ class SandboxExecutor:
                        result_queue: multiprocessing.Queue,
                        call_target: Optional[str] = None,
                        call_args: Optional[List] = None,
-                       debug_mode: bool = False):
+                       debug_mode: bool = False,
+                       input_data: Optional[Any] = None):
         """
         子进程执行目标
         
@@ -115,6 +116,7 @@ class SandboxExecutor:
             call_target: 调用目标
             call_args: 调用参数
             debug_mode: 调试模式
+            input_data: 输入数据（P1修复新增）
         """
         try:
             # 设置资源限制
@@ -133,10 +135,11 @@ class SandboxExecutor:
                 })
                 return
             
+            # P1修复：传递input_data
             if debug_mode:
-                result = engine.debug(call_target=call_target, call_args=call_args)
+                result = engine.debug(call_target=call_target, call_args=call_args, input_data=input_data)
             else:
-                result = engine.execute(call_target=call_target, call_args=call_args)
+                result = engine.execute(call_target=call_target, call_args=call_args, input_data=input_data)
             
             result_queue.put(result)
             
@@ -159,7 +162,8 @@ class SandboxExecutor:
                 timeout: float = 5.0,
                 call_target: Optional[str] = None,
                 call_args: Optional[List] = None,
-                debug_mode: bool = False) -> Dict[str, Any]:
+                debug_mode: bool = False,
+                input_data: Optional[Any] = None) -> Dict[str, Any]:
         """
         在沙箱中执行HPL文件
         
@@ -169,6 +173,7 @@ class SandboxExecutor:
             call_target: 调用目标函数
             call_args: 调用参数
             debug_mode: 调试模式
+            input_data: 输入数据（P1修复新增）
         
         Returns:
             dict: 执行结果
@@ -190,7 +195,8 @@ class SandboxExecutor:
                 timeout=timeout,
                 call_target=call_target,
                 call_args=call_args,
-                debug_mode=debug_mode
+                debug_mode=debug_mode,
+                input_data=input_data
             )
         
         # Unix系统使用完整沙箱
@@ -198,7 +204,7 @@ class SandboxExecutor:
         
         process = multiprocessing.Process(
             target=self._execute_target,
-            args=(file_path, result_queue, call_target, call_args, debug_mode),
+            args=(file_path, result_queue, call_target, call_args, debug_mode, input_data),
             name='HPL-Sandbox'
         )
         
@@ -270,7 +276,8 @@ class SandboxExecutor:
                     call_target: Optional[str] = None,
                     call_args: Optional[List] = None,
                     debug_mode: bool = False,
-                    file_path: Optional[str] = None) -> Dict[str, Any]:
+                    file_path: Optional[str] = None,
+                    input_data: Optional[Any] = None) -> Dict[str, Any]:
         """
         在沙箱中执行HPL代码字符串
         
@@ -281,6 +288,7 @@ class SandboxExecutor:
             call_args: 调用参数
             debug_mode: 调试模式
             file_path: 可选的文件路径（用于错误显示）
+            input_data: 输入数据（P1修复新增）
         
         Returns:
             dict: 执行结果
@@ -300,7 +308,8 @@ class SandboxExecutor:
                 timeout=timeout,
                 call_target=call_target,
                 call_args=call_args,
-                debug_mode=debug_mode
+                debug_mode=debug_mode,
+                input_data=input_data
             )
             
             return result
@@ -317,6 +326,7 @@ def execute_in_sandbox(file_path: str,
                       timeout: float = 5.0,
                       max_memory_mb: int = 100,
                       max_cpu_time: int = 10,
+                      input_data: Optional[Any] = None,
                       **kwargs) -> Dict[str, Any]:
     """
     便捷函数：在沙箱中执行HPL文件
@@ -326,6 +336,7 @@ def execute_in_sandbox(file_path: str,
         timeout: 超时时间（秒）
         max_memory_mb: 最大内存（MB）
         max_cpu_time: 最大CPU时间（秒）
+        input_data: 输入数据（P1修复新增）
         **kwargs: 其他参数
     
     Returns:
@@ -337,13 +348,14 @@ def execute_in_sandbox(file_path: str,
     )
     
     sandbox = SandboxExecutor(limits)
-    return sandbox.execute(file_path, timeout=timeout, **kwargs)
+    return sandbox.execute(file_path, timeout=timeout, input_data=input_data, **kwargs)
 
 
 def execute_code_in_sandbox(code: str,
                            timeout: float = 5.0,
                            max_memory_mb: int = 100,
                            max_cpu_time: int = 10,
+                           input_data: Optional[Any] = None,
                            **kwargs) -> Dict[str, Any]:
     """
     便捷函数：在沙箱中执行HPL代码字符串
@@ -353,6 +365,7 @@ def execute_code_in_sandbox(code: str,
         timeout: 超时时间（秒）
         max_memory_mb: 最大内存（MB）
         max_cpu_time: 最大CPU时间（秒）
+        input_data: 输入数据（P1修复新增）
         **kwargs: 其他参数
     
     Returns:
@@ -364,7 +377,7 @@ def execute_code_in_sandbox(code: str,
     )
     
     sandbox = SandboxExecutor(limits)
-    return sandbox.execute_code(code, timeout=timeout, **kwargs)
+    return sandbox.execute_code(code, timeout=timeout, input_data=input_data, **kwargs)
 
 
 # 默认沙箱执行器实例

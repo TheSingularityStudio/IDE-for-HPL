@@ -7,9 +7,9 @@ import os
 import shutil
 import tempfile
 import logging
+import json
 from datetime import datetime
-from flask import Flask, request, jsonify
-
+from flask import Flask, request, jsonify, Response, stream_with_context
 
 from config import (
     MAX_REQUEST_SIZE, MAX_EXECUTION_TIME, 
@@ -32,6 +32,9 @@ from ide.services.runtime_manager import check_runtime_available
 
 from ide.services.syntax_validator import validate_code
 
+# P1修复：导入流式执行
+from ide.services.hpl_engine import execute_code_streaming
+
 
 
 
@@ -53,6 +56,7 @@ def register_api_routes(app: Flask):
         执行 HPL 代码
         接收代码字符串，保存到临时文件并执行
         P0修复：使用进程隔离和资源限制
+        P1修复：支持input_data参数
         """
         # 检查 hpl_runtime 是否可用
         if not check_runtime_available():
@@ -63,6 +67,16 @@ def register_api_routes(app: Flask):
             }), 503
         
         code = request.form.get('code', '')
+        
+        # P1修复：获取输入数据
+        input_data = request.form.get('input_data', None)
+        if input_data:
+            try:
+                # 尝试解析为JSON（支持数组或字符串）
+                input_data = json.loads(input_data)
+            except json.JSONDecodeError:
+                # 如果不是JSON，作为普通字符串处理
+                pass
         
         if not code.strip():
             return jsonify({
@@ -91,11 +105,13 @@ def register_api_routes(app: Flask):
                 logger.info(f"执行临时文件: {temp_file}")
                 
                 # P0修复：使用沙箱执行（带资源限制和进程隔离）
+                # P1修复：传递input_data
                 result = execute_in_sandbox(
                     temp_file,
                     timeout=MAX_EXECUTION_TIME,
                     max_memory_mb=100,  # 100MB内存限制
-                    max_cpu_time=MAX_EXECUTION_TIME  # CPU时间限制
+                    max_cpu_time=MAX_EXECUTION_TIME,  # CPU时间限制
+                    input_data=input_data
                 )
                 
                 return jsonify(result)
@@ -106,6 +122,70 @@ def register_api_routes(app: Flask):
                 'success': False,
                 'error': f'服务器错误: {str(e)}'
             })
+
+    @app.route('/api/run/stream', methods=['POST'])
+    @limit_request_size(MAX_REQUEST_SIZE)
+    def run_code_streaming():
+        """
+        P1修复：流式执行 HPL 代码
+        使用 Server-Sent Events (SSE) 实时返回输出
+        """
+        # 检查 hpl_runtime 是否可用
+        if not check_runtime_available():
+            return jsonify({
+                'success': False,
+                'error': 'hpl-runtime 未安装，无法执行代码',
+                'hint': '请运行: pip install hpl-runtime'
+            }), 503
+        
+        code = request.form.get('code', '')
+        
+        # 获取输入数据
+        input_data = request.form.get('input_data', None)
+        if input_data:
+            try:
+                input_data = json.loads(input_data)
+            except json.JSONDecodeError:
+                pass
+        
+        if not code.strip():
+            return jsonify({
+                'success': False,
+                'error': '代码为空'
+            })
+
+        # 清理代码
+        code = clean_code(code)
+        
+        def generate_stream():
+            """生成SSE流"""
+            try:
+                # 使用流式执行
+                for chunk in execute_code_streaming(code, input_data=input_data):
+                    # 将每个输出块转换为SSE格式
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                
+                # 发送结束标记
+                yield f"data: {json.dumps({'type': 'done', 'data': None})}\n\n"
+                
+            except Exception as e:
+                logger.error(f"流式执行错误: {e}")
+                error_chunk = {
+                    'type': 'error',
+                    'data': str(e),
+                    'error_type': type(e).__name__
+                }
+                yield f"data: {json.dumps(error_chunk)}\n\n"
+        
+        # 返回SSE响应
+        return Response(
+            stream_with_context(generate_stream()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no'  # 禁用Nginx缓冲
+            }
+        )
 
     @app.route('/api/examples', methods=['GET'])
     def list_examples():

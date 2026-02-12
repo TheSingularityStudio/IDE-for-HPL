@@ -146,18 +146,24 @@ def extract_includes(code: str) -> List[str]:
     return includes
 
 
-def copy_include_files(code: str, temp_dir: str, base_dir: Optional[str] = None) -> Tuple[List[str], str, List[str]]:
+def copy_include_files(code: str, temp_dir: str, 
+                       base_dir: Optional[str] = None,
+                       current_file: Optional[str] = None) -> Tuple[List[str], str, List[str]]:
     """
     复制 include 文件到临时目录
     从多个可能的目录查找 include 文件：
-    1. 当前工作目录（如果指定了 base_dir）
-    2. 项目根目录
-    3. examples 目录
+    1. 当前文件所在目录（最高优先级）- P1修复
+    2. 当前工作目录（如果指定了 base_dir）
+    3. 项目根目录
+    4. examples 目录
+    
+    P1修复：支持相对路径解析（./ 和 ../）相对于当前文件
     
     Args:
         code: HPL代码
         temp_dir: 临时目录路径
         base_dir: 基础搜索目录（可选）
+        current_file: 当前执行的HPL文件路径（可选，P1修复新增）
     
     Returns:
         tuple: (copied_files列表, 更新后的代码, 未找到的includes列表)
@@ -169,23 +175,50 @@ def copy_include_files(code: str, temp_dir: str, base_dir: Optional[str] = None)
     copied_files = []
     not_found = []
     
+    # P1修复：确定当前文件所在目录
+    current_dir = None
+    if current_file:
+        current_dir = os.path.dirname(os.path.abspath(current_file))
+        logger.debug(f"P1修复：当前文件目录: {current_dir}")
+    
     # 定义搜索路径（按优先级）
     search_paths = []
     
-    # 1. 基础目录（如果有）
+    # P1修复：1. 当前文件所在目录（最高优先级）
+    if current_dir and os.path.exists(current_dir):
+        search_paths.append(current_dir)
+        logger.debug(f"P1修复：添加当前文件目录到搜索路径: {current_dir}")
+    
+    # 2. 基础目录（如果有）
     if base_dir and os.path.exists(base_dir):
         search_paths.append(os.path.abspath(base_dir))
     
-    # 2. 项目根目录
+    # 3. 项目根目录
     project_root = os.path.join(os.path.dirname(__file__), '..', '..')
     search_paths.append(os.path.abspath(project_root))
     
-    # 3. examples 目录
+    # 4. examples 目录
     examples_dir = os.path.join(project_root, 'examples')
     if os.path.exists(examples_dir):
         search_paths.append(examples_dir)
     
     for include_file in includes:
+        # P1修复：处理相对路径（./ 和 ../）
+        resolved_path = None
+        
+        if include_file.startswith('./') or include_file.startswith('../'):
+            # 相对路径，相对于当前文件解析
+            if current_dir:
+                try:
+                    resolved_path = os.path.normpath(os.path.join(current_dir, include_file))
+                    if os.path.exists(resolved_path) and os.path.isfile(resolved_path):
+                        logger.debug(f"P1修复：解析相对路径成功: {include_file} -> {resolved_path}")
+                    else:
+                        resolved_path = None
+                except Exception as e:
+                    logger.warning(f"P1修复：解析相对路径失败: {include_file}, 错误: {e}")
+                    resolved_path = None
+        
         # 清理文件路径（防止目录遍历）
         clean_include = os.path.normpath(include_file).lstrip('/\\')
         if '..' in clean_include:
@@ -194,29 +227,60 @@ def copy_include_files(code: str, temp_dir: str, base_dir: Optional[str] = None)
             continue
         
         found = False
-        for search_dir in search_paths:
-            source_path = os.path.join(search_dir, clean_include)
-            if os.path.exists(source_path) and os.path.isfile(source_path):
-                # 复制到临时目录
+        
+        # P1修复：如果已经解析到相对路径，直接使用
+        if resolved_path and os.path.exists(resolved_path):
+            source_path = resolved_path
+            # 计算在临时目录中的目标路径
+            if include_file.startswith('./') or include_file.startswith('../'):
+                # 保持相对结构
                 dest_path = os.path.join(temp_dir, clean_include)
-                
-                # 确保目标目录存在
-                dest_dir = os.path.dirname(dest_path)
-                if dest_dir and not os.path.exists(dest_dir):
-                    try:
-                        os.makedirs(dest_dir, exist_ok=True)
-                    except Exception as e:
-                        logger.error(f"创建目录失败: {dest_dir}, 错误: {e}")
-                        continue
-                
+            else:
+                dest_path = os.path.join(temp_dir, os.path.basename(clean_include))
+            
+            # 确保目标目录存在
+            dest_dir = os.path.dirname(dest_path)
+            if dest_dir and not os.path.exists(dest_dir):
                 try:
-                    shutil.copy2(source_path, dest_path)
-                    copied_files.append(dest_path)
-                    logger.info(f"复制 include 文件: {source_path} -> {dest_path}")
-                    found = True
-                    break
+                    os.makedirs(dest_dir, exist_ok=True)
                 except Exception as e:
-                    logger.error(f"复制 include 文件失败: {source_path}, 错误: {e}")
+                    logger.error(f"创建目录失败: {dest_dir}, 错误: {e}")
+                    not_found.append(include_file)
+                    continue
+            
+            try:
+                shutil.copy2(source_path, dest_path)
+                copied_files.append(dest_path)
+                logger.info(f"P1修复：复制 include 文件: {source_path} -> {dest_path}")
+                found = True
+            except Exception as e:
+                logger.error(f"复制 include 文件失败: {source_path}, 错误: {e}")
+        
+        # 如果在相对路径中没找到，或者不是相对路径，则在搜索路径中查找
+        if not found:
+            for search_dir in search_paths:
+                source_path = os.path.join(search_dir, clean_include)
+                if os.path.exists(source_path) and os.path.isfile(source_path):
+                    # 复制到临时目录
+                    dest_path = os.path.join(temp_dir, clean_include)
+                    
+                    # 确保目标目录存在
+                    dest_dir = os.path.dirname(dest_path)
+                    if dest_dir and not os.path.exists(dest_dir):
+                        try:
+                            os.makedirs(dest_dir, exist_ok=True)
+                        except Exception as e:
+                            logger.error(f"创建目录失败: {dest_dir}, 错误: {e}")
+                            continue
+                    
+                    try:
+                        shutil.copy2(source_path, dest_path)
+                        copied_files.append(dest_path)
+                        logger.info(f"复制 include 文件: {source_path} -> {dest_path}")
+                        found = True
+                        break
+                    except Exception as e:
+                        logger.error(f"复制 include 文件失败: {source_path}, 错误: {e}")
         
         if not found:
             not_found.append(include_file)
@@ -232,9 +296,11 @@ def process_for_debug(code: str, file_path: Optional[str] = None,
     处理代码用于调试执行
     清理代码、复制 include 文件，并准备调试环境
     
+    P1修复：传递 file_path 到 copy_include_files 以支持相对路径解析
+    
     Args:
         code: HPL 源代码
-        file_path: 可选的文件路径（用于确定基础目录）
+        file_path: 可选的文件路径（用于确定基础目录和相对路径解析）
         call_target: 可选的调用目标函数
         call_args: 可选的调用参数
     
@@ -258,9 +324,9 @@ def process_for_debug(code: str, file_path: Optional[str] = None,
         # 3. 确定基础目录
         base_dir = os.path.dirname(file_path) if file_path else None
         
-        # 4. 复制 include 文件
+        # 4. 复制 include 文件 - P1修复：传递 file_path 支持相对路径
         copied_files, _, not_found = copy_include_files(
-            cleaned_code, temp_dir, base_dir
+            cleaned_code, temp_dir, base_dir, current_file=file_path
         )
         
         # 5. 创建临时 HPL 文件

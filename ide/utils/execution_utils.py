@@ -31,11 +31,14 @@ def _execute_in_process(file_path: str,
                        error_queue: multiprocessing.Queue,
                        call_target: Optional[str] = None,
                        call_args: Optional[List] = None,
-                       debug_mode: bool = False):
+                       debug_mode: bool = False,
+                       input_data: Optional[Any] = None):
     """
     在独立进程中执行HPL代码
     
     这是子进程的目标函数，在主进程中被调用
+    
+    P1修复：添加input_data参数支持
     """
     try:
         # 在子进程中导入，避免影响主进程
@@ -50,10 +53,11 @@ def _execute_in_process(file_path: str,
             })
             return
         
+        # P1修复：传递input_data
         if debug_mode:
-            result = engine.debug(call_target=call_target, call_args=call_args)
+            result = engine.debug(call_target=call_target, call_args=call_args, input_data=input_data)
         else:
-            result = engine.execute(call_target=call_target, call_args=call_args)
+            result = engine.execute(call_target=call_target, call_args=call_args, input_data=input_data)
         
         result_queue.put(result)
         
@@ -69,11 +73,14 @@ def execute_with_process_timeout(file_path: str,
                                  timeout: float = 5.0,
                                  call_target: Optional[str] = None,
                                  call_args: Optional[List] = None,
-                                 debug_mode: bool = False) -> Dict[str, Any]:
+                                 debug_mode: bool = False,
+                                 input_data: Optional[Any] = None) -> Dict[str, Any]:
     """
     使用进程隔离执行HPL代码，带超时控制
     
     这是P0修复的核心函数，使用multiprocessing实现真正的进程级超时
+    
+    P1修复：添加input_data参数支持
     
     Args:
         file_path: HPL文件路径
@@ -81,6 +88,7 @@ def execute_with_process_timeout(file_path: str,
         call_target: 可选的调用目标函数
         call_args: 可选的调用参数
         debug_mode: 是否启用调试模式
+        input_data: 可选的输入数据（P1修复新增）
     
     Returns:
         dict: 执行结果
@@ -98,7 +106,7 @@ def execute_with_process_timeout(file_path: str,
     # 创建子进程
     process = multiprocessing.Process(
         target=_execute_in_process,
-        args=(file_path, result_queue, error_queue, call_target, call_args, debug_mode),
+        args=(file_path, result_queue, error_queue, call_target, call_args, debug_mode, input_data),
         name='HPL-Executor'
     )
     
@@ -191,9 +199,12 @@ def execute_code_with_timeout(code: str,
                               call_target: Optional[str] = None,
                               call_args: Optional[List] = None,
                               debug_mode: bool = False,
-                              file_path: Optional[str] = None) -> Dict[str, Any]:
+                              file_path: Optional[str] = None,
+                              input_data: Optional[Any] = None) -> Dict[str, Any]:
     """
     执行HPL代码字符串，带超时控制
+    
+    P1修复：添加input_data参数支持
     
     Args:
         code: HPL代码字符串
@@ -202,6 +213,7 @@ def execute_code_with_timeout(code: str,
         call_args: 可选的调用参数
         debug_mode: 是否启用调试模式
         file_path: 可选的文件路径（用于错误显示）
+        input_data: 可选的输入数据（P1修复新增）
     
     Returns:
         dict: 执行结果
@@ -224,7 +236,8 @@ def execute_code_with_timeout(code: str,
             timeout=timeout,
             call_target=call_target,
             call_args=call_args,
-            debug_mode=debug_mode
+            debug_mode=debug_mode,
+            input_data=input_data
         )
         
         return result
@@ -336,36 +349,44 @@ def check_process_resources(process: multiprocessing.Process,
 # 便捷函数
 def execute_hpl_safe(file_path: str,
                     timeout: float = 5.0,
+                    input_data: Optional[Any] = None,
                     **kwargs) -> Dict[str, Any]:
     """
     安全执行HPL文件的便捷函数
     
+    P1修复：添加input_data参数支持
+    
     Args:
         file_path: HPL文件路径
         timeout: 超时时间（秒）
+        input_data: 可选的输入数据（P1修复新增）
         **kwargs: 传递给 execute_with_process_timeout 的其他参数
     
     Returns:
         dict: 执行结果
     """
-    return execute_with_process_timeout(file_path, timeout=timeout, **kwargs)
+    return execute_with_process_timeout(file_path, timeout=timeout, input_data=input_data, **kwargs)
 
 
 def execute_hpl_code_safe(code: str,
                          timeout: float = 5.0,
+                         input_data: Optional[Any] = None,
                          **kwargs) -> Dict[str, Any]:
     """
     安全执行HPL代码字符串的便捷函数
     
+    P1修复：添加input_data参数支持
+    
     Args:
         code: HPL代码字符串
         timeout: 超时时间（秒）
+        input_data: 可选的输入数据（P1修复新增）
         **kwargs: 传递给 execute_code_with_timeout 的其他参数
     
     Returns:
         dict: 执行结果
     """
-    return execute_code_with_timeout(code, timeout=timeout, **kwargs)
+    return execute_code_with_timeout(code, timeout=timeout, input_data=input_data, **kwargs)
 
 
 # 向后兼容

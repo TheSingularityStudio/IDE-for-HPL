@@ -10,7 +10,11 @@ import tempfile
 import logging
 import hashlib
 import pickle
-from typing import Dict, List, Any, Optional, Tuple
+import io
+import contextlib
+import queue
+import threading
+from typing import Dict, List, Any, Optional, Tuple, Generator
 from dataclasses import dataclass
 
 # 导入统一的运行时管理器（P0修复）
@@ -311,20 +315,19 @@ class HPLEngine:
         return items
     
     def execute(self, call_target: Optional[str] = None,
-                call_args: Optional[List] = None) -> Dict[str, Any]:
+                call_args: Optional[List] = None,
+                input_data: Optional[Any] = None) -> Dict[str, Any]:
         """
         执行代码
         
         Args:
             call_target: 可选的调用目标函数
             call_args: 可选的调用参数
+            input_data: 可选的输入数据（用于input()函数）
             
         Returns:
             Dict: 执行结果
         """
-        import io
-        import contextlib
-        
         parse_result = self._parse()
         if not parse_result:
             return {
@@ -341,11 +344,24 @@ class HPLEngine:
                 'error': '没有 main 函数或 call 目标'
             }
         
+        # P1修复：准备输入数据
+        stdin_buffer = None
+        original_stdin = None
+        if input_data is not None:
+            if isinstance(input_data, list):
+                input_data = '\n'.join(str(item) for item in input_data)
+            stdin_buffer = io.StringIO(str(input_data))
+            original_stdin = sys.stdin
+        
         try:
             from hpl_runtime import HPLEvaluator, HPLRuntimeError, format_error_for_user
             
             # 捕获输出
             output_buffer = io.StringIO()
+            
+            # P1修复：重定向stdin和stdout
+            if stdin_buffer:
+                sys.stdin = stdin_buffer
             
             with contextlib.redirect_stdout(output_buffer):
                 evaluator = HPLEvaluator(
@@ -380,17 +396,135 @@ class HPLEngine:
         except Exception as e:
             return {
                 'success': False,
-                'error': f"执行错误: {str(e)}"
+                'error': f"执行错误: {str(e)}",
+                'error_type': type(e).__name__
             }
+        finally:
+            # P1修复：恢复原始stdin
+            if original_stdin is not None:
+                sys.stdin = original_stdin
+    
+    def execute_streaming(self, call_target: Optional[str] = None,
+                         call_args: Optional[List] = None,
+                         input_data: Optional[Any] = None) -> Generator[Dict[str, Any], None, None]:
+        """
+        P1修复：流式执行代码，实时产生输出
+        
+        Args:
+            call_target: 可选的调用目标函数
+            call_args: 可选的调用参数
+            input_data: 可选的输入数据（用于input()函数）
+            
+        Yields:
+            Dict: 输出块 {'type': 'stdout'|'stderr'|'error'|'done', 'data': str}
+        """
+        parse_result = self._parse()
+        if not parse_result:
+            yield {'type': 'error', 'data': '解析失败，无法执行'}
+            return
+        
+        classes, objects, functions, main_func, _, _, _ = parse_result
+        
+        # 检查是否有可执行的函数
+        if not main_func and not call_target:
+            yield {'type': 'error', 'data': '没有 main 函数或 call 目标'}
+            return
+        
+        # 准备输入数据
+        stdin_buffer = None
+        original_stdin = None
+        if input_data is not None:
+            if isinstance(input_data, list):
+                input_data = '\n'.join(str(item) for item in input_data)
+            stdin_buffer = io.StringIO(str(input_data))
+            original_stdin = sys.stdin
+            sys.stdin = stdin_buffer
+        
+        # 创建输出队列
+        output_queue = queue.Queue()
+        
+        class StreamingBuffer:
+            """流式输出缓冲区"""
+            def write(self, data):
+                if data:
+                    output_queue.put({'type': 'stdout', 'data': str(data)})
+            
+            def flush(self):
+                pass
+        
+        def execute_in_thread():
+            """在后台线程中执行代码"""
+            try:
+                from hpl_runtime import HPLEvaluator, HPLRuntimeError, format_error_for_user
+                
+                stream_buffer = StreamingBuffer()
+                
+                with contextlib.redirect_stdout(stream_buffer):
+                    evaluator = HPLEvaluator(
+                        classes=classes,
+                        objects=objects,
+                        functions=functions,
+                        main_func=main_func,
+                        call_target=call_target,
+                        call_args=call_args or []
+                    )
+                    evaluator.run()
+                
+                output_queue.put({'type': 'done', 'data': None})
+                
+            except HPLRuntimeError as e:
+                user_message = format_error_for_user(e, self.source_code)
+                output_queue.put({
+                    'type': 'error',
+                    'data': user_message,
+                    'error_type': type(e).__name__,
+                    'line': getattr(e, 'line', None),
+                    'column': getattr(e, 'column', None),
+                    'call_stack': getattr(e, 'call_stack', []),
+                    'error_key': getattr(e, 'error_key', None)
+                })
+            except Exception as e:
+                output_queue.put({
+                    'type': 'error',
+                    'data': str(e),
+                    'error_type': type(e).__name__
+                })
+            finally:
+                # 恢复原始stdin
+                if original_stdin is not None:
+                    sys.stdin = original_stdin
+        
+        # 启动执行线程
+        thread = threading.Thread(target=execute_in_thread)
+        thread.start()
+        
+        # 生成输出块
+        while True:
+            try:
+                msg = output_queue.get(timeout=0.1)
+                if msg['type'] == 'done':
+                    break
+                yield msg
+            except queue.Empty:
+                if not thread.is_alive():
+                    # 线程已结束但没有收到done消息
+                    break
+                # 发送心跳保持连接
+                yield {'type': 'heartbeat', 'data': ''}
+        
+        # 等待线程结束
+        thread.join(timeout=1.0)
     
     def debug(self, call_target: Optional[str] = None,
-              call_args: Optional[List] = None) -> Dict[str, Any]:
+              call_args: Optional[List] = None,
+              input_data: Optional[Any] = None) -> Dict[str, Any]:
         """
         调试执行代码
         
         Args:
             call_target: 可选的调用目标函数
             call_args: 可选的调用参数
+            input_data: 可选的输入数据（用于input()函数）
             
         Returns:
             Dict: 调试结果
@@ -414,7 +548,7 @@ class HPLEngine:
             else:
                 file_to_debug = self.current_file
             
-            return self._debug_file(file_to_debug, call_target, call_args)
+            return self._debug_file(file_to_debug, call_target, call_args, input_data)
             
         except Exception as e:
             logger.error(f"调试准备失败: {e}")
@@ -441,10 +575,24 @@ class HPLEngine:
                     logger.warning(f"清理临时目录失败: {temp_dir}, 错误: {e}")
     
     def _debug_file(self, file_path: str, call_target: Optional[str] = None,
-                    call_args: Optional[List] = None) -> Dict[str, Any]:
+                    call_args: Optional[List] = None,
+                    input_data: Optional[Any] = None) -> Dict[str, Any]:
         """调试执行文件"""
+        # P1修复：准备输入数据
+        stdin_buffer = None
+        original_stdin = None
+        if input_data is not None:
+            if isinstance(input_data, list):
+                input_data = '\n'.join(str(item) for item in input_data)
+            stdin_buffer = io.StringIO(str(input_data))
+            original_stdin = sys.stdin
+        
         try:
             from hpl_runtime import DebugInterpreter, HPLSyntaxError, HPLRuntimeError
+            
+            # P1修复：重定向stdin
+            if stdin_buffer:
+                sys.stdin = stdin_buffer
             
             interpreter = DebugInterpreter(debug_mode=True, verbose=True)
             result = interpreter.run(file_path, call_target=call_target, call_args=call_args)
@@ -506,6 +654,10 @@ class HPLEngine:
                 'error': f"调试失败: {str(e)}",
                 'debug_info': {}
             }
+        finally:
+            # P1修复：恢复原始stdin
+            if original_stdin is not None:
+                sys.stdin = original_stdin
     
     def _calculate_function_stats(self, execution_trace: List[Dict]) -> Dict[str, Dict[str, Any]]:
         """计算函数执行统计"""
@@ -708,7 +860,8 @@ def get_completions(code: str, line: int, column: int,
 
 def execute_code(code: str, call_target: Optional[str] = None,
                 call_args: Optional[List] = None,
-                file_path: Optional[str] = None) -> Dict[str, Any]:
+                file_path: Optional[str] = None,
+                input_data: Optional[Any] = None) -> Dict[str, Any]:
     """
     执行代码的便捷函数
     
@@ -717,6 +870,7 @@ def execute_code(code: str, call_target: Optional[str] = None,
         call_target: 调用目标
         call_args: 调用参数
         file_path: 可选的文件路径
+        input_data: 可选的输入数据（用于input()函数）
         
     Returns:
         Dict: 执行结果
@@ -724,7 +878,7 @@ def execute_code(code: str, call_target: Optional[str] = None,
     try:
         engine = HPLEngine()
         engine.load_code(code, file_path)
-        return engine.execute(call_target, call_args)
+        return engine.execute(call_target, call_args, input_data)
     except ImportError as e:
         return {
             'success': False,
@@ -734,7 +888,8 @@ def execute_code(code: str, call_target: Optional[str] = None,
 
 def debug_code(code: str, call_target: Optional[str] = None,
               call_args: Optional[List] = None,
-              file_path: Optional[str] = None) -> Dict[str, Any]:
+              file_path: Optional[str] = None,
+              input_data: Optional[Any] = None) -> Dict[str, Any]:
     """
     调试代码的便捷函数
     
@@ -743,6 +898,7 @@ def debug_code(code: str, call_target: Optional[str] = None,
         call_target: 调用目标
         call_args: 调用参数
         file_path: 可选的文件路径
+        input_data: 可选的输入数据（用于input()函数）
         
     Returns:
         Dict: 调试结果
@@ -750,7 +906,7 @@ def debug_code(code: str, call_target: Optional[str] = None,
     try:
         engine = HPLEngine()
         engine.load_code(code, file_path)
-        return engine.debug(call_target, call_args)
+        return engine.debug(call_target, call_args, input_data)
     except ImportError as e:
         return {
             'success': False,
@@ -780,4 +936,32 @@ def get_code_outline(code: str, file_path: Optional[str] = None) -> Dict[str, Li
             'functions': [],
             'objects': [],
             'imports': []
+        }
+
+
+def execute_code_streaming(code: str, call_target: Optional[str] = None,
+                          call_args: Optional[List] = None,
+                          file_path: Optional[str] = None,
+                          input_data: Optional[Any] = None) -> Generator[Dict[str, Any], None, None]:
+    """
+    P1修复：流式执行代码的便捷函数
+    
+    Args:
+        code: HPL 代码
+        call_target: 调用目标
+        call_args: 调用参数
+        file_path: 可选的文件路径
+        input_data: 可选的输入数据（用于input()函数）
+        
+    Yields:
+        Dict: 输出块 {'type': 'stdout'|'stderr'|'error'|'done', 'data': str}
+    """
+    try:
+        engine = HPLEngine()
+        engine.load_code(code, file_path)
+        yield from engine.execute_streaming(call_target, call_args, input_data)
+    except ImportError as e:
+        yield {
+            'type': 'error',
+            'data': f'hpl_runtime 不可用: {str(e)}'
         }
